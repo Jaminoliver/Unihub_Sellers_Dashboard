@@ -58,7 +58,7 @@ const navigation = [
   },
   {
     name: 'Account / Verification',
-    href: '/dashboard/verification',
+    href: '/dashboard/account/verification',
     icon: Users,
   },
   {

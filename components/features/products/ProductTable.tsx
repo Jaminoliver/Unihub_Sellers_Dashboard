@@ -30,8 +30,18 @@ import Image from 'next/image';
 
 import type { Product } from '@/lib/types';
 import { ProductTableActions } from './ProductTableActions';
+import { Clock } from 'lucide-react';
 
-// Define the columns for the table, matching the UI sample
+// Helper function to get days until unsuspension
+function getDaysUntilUnsuspension(suspendedUntil: string): number {
+  const now = new Date();
+  const until = new Date(suspendedUntil);
+  const diffTime = until.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return Math.max(0, diffDays);
+}
+
+// Define the columns for the table
 export const columns: ColumnDef<Product>[] = [
   // Checkbox column
   {
@@ -80,15 +90,42 @@ export const columns: ColumnDef<Product>[] = [
     },
   },
 
-  // Status column
+  // Status column (with suspension badge using computed field)
   {
     accessorKey: 'is_available',
     header: 'Status',
     cell: ({ row }) => {
       const isAvailable = row.getValue('is_available');
+      const isSuspended = row.original.is_suspended; // Use computed field from database
+      const suspendedUntil = row.original.suspended_until;
+      
+      // Priority: Suspended > Out of Stock > In Stock
+      if (isSuspended && suspendedUntil) {
+        const daysLeft = getDaysUntilUnsuspension(suspendedUntil);
+        return (
+          <div className="flex flex-col gap-1">
+            <Badge
+              variant="secondary"
+              className="bg-orange-100 text-orange-800 w-fit"
+            >
+              <Clock className="h-3 w-3 mr-1" />
+              Suspended
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              {daysLeft} day{daysLeft !== 1 ? 's' : ''} left
+            </span>
+          </div>
+        );
+      }
+
       return (
-        <Badge variant={isAvailable ? 'default' : 'destructive'}
-          className={isAvailable ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
+        <Badge
+          variant={isAvailable ? 'default' : 'destructive'}
+          className={
+            isAvailable
+              ? 'bg-green-100 text-green-800'
+              : 'bg-red-100 text-red-800'
+          }
         >
           {isAvailable ? 'In Stock' : 'Out of Stock'}
         </Badge>
@@ -121,7 +158,7 @@ export const columns: ColumnDef<Product>[] = [
         <div className={stock < 10 ? 'text-red-600 font-medium' : ''}>
           {stock}
         </div>
-      )
+      );
     },
   },
 
@@ -135,11 +172,17 @@ export const columns: ColumnDef<Product>[] = [
     },
   },
 
-  // Actions column (Edit, Delete)
+  // Actions column (Edit, Delete, Suspend)
   {
     id: 'actions',
     cell: ({ row }) => {
-      return <ProductTableActions productId={row.original.id} />;
+      return (
+        <ProductTableActions
+          productId={row.original.id}
+          productName={row.original.name}
+          isSuspended={row.original.is_suspended} // Use computed field
+        />
+      );
     },
   },
 ];
@@ -218,6 +261,7 @@ export function ProductTable({ data }: ProductTableProps) {
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && 'selected'}
+                  className={row.original.is_suspended ? 'bg-orange-50' : ''}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
