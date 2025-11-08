@@ -6,6 +6,12 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+// This is a simple type for your category data
+export type Category = {
+  id: string;
+  name: string;
+};
+
 export interface Database {
   public: {
     Tables: {
