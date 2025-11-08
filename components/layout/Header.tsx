@@ -4,6 +4,7 @@ import { Search, Bell, HelpCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { HeaderSignOut } from './HeaderSignOut';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -112,7 +113,7 @@ export function Header({ sellerName = 'BrightBooks NG', notificationCount = 3 }:
               <DropdownMenuItem>Settings</DropdownMenuItem>
               <DropdownMenuItem>Verification</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-red-600">Sign Out</DropdownMenuItem>
+              <HeaderSignOut />
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
