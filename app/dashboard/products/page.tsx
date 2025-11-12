@@ -58,9 +58,7 @@ function getProductStats(products: Product[]) {
   const suspendedProducts = products.filter((p) => 
     isSuspended(p.suspended_until)
   ).length;
-  const totalValue = products.reduce((sum, p) => 
-    sum + (p.price * p.stock_quantity), 0
-  );
+  const totalValue = products.reduce((sum, p) => sum + p.price, 0);
 
   return {
     totalProducts,
@@ -167,7 +165,7 @@ export default async function ProductsPage() {
           <CardContent>
             <div className="text-2xl font-bold">₦{stats.totalValue.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Total stock value
+              Total products value
             </p>
           </CardContent>
         </Card>

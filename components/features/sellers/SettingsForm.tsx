@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface SettingsFormProps {
   seller: {
@@ -29,7 +36,7 @@ export function SettingsForm({
 }: SettingsFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [universities, setUniversities] = useState<Array<{ id: string; name: string; short_name?: string }>>([]);
+  const [universities, setUniversities] = useState<Array<{ id: string; name: string; short_name?: string; state: string }>>([]);
   const [loadingUniversities, setLoadingUniversities] = useState(false);
   
   // Form state
@@ -78,8 +85,8 @@ export function SettingsForm({
       // Query using the state name (existing column)
       const { data, error } = await supabase
         .from('universities')
-        .select('id, name, short_name')
-        .eq('state', selectedState.name)  // ✅ Using existing 'state' column
+        .select('id, name, short_name, state')
+        .eq('state', selectedState.name)
         .eq('is_active', true)
         .order('name');
 
@@ -112,6 +119,16 @@ export function SettingsForm({
     try {
       const supabase = createClient();
       
+      // ✅ FIX: Get the selected university's state name
+      const selectedUniversity = universities.find(u => u.id === formData.university_id);
+      const stateName = selectedUniversity?.state || null;
+
+      console.log('Updating seller with:', {
+        university_id: formData.university_id,
+        state: stateName,
+      });
+
+      // ✅ FIX: Update both university_id AND state columns
       const { error } = await supabase
         .from('sellers')
         .update({
@@ -122,6 +139,8 @@ export function SettingsForm({
           description: formData.description || null,
           store_category_id: formData.store_category_id || null,
           university_id: formData.university_id || null,
+          state: stateName, // ✅ ADDED: Update state column
+          updated_at: new Date().toISOString(),
         })
         .eq('id', seller.id);
 
@@ -164,24 +183,32 @@ export function SettingsForm({
             />
           </div>
 
-          {/* State */}
+          {/* State - Using Shadcn Select */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               State <span className="text-red-500">*</span>
             </label>
-            <select
-              required
+            <Select
               value={formData.state_id}
-              onChange={(e) => handleStateChange(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onValueChange={handleStateChange}
+              required
             >
-              <option value="">Select your state</option>
-              {states.map((state) => (
-                <option key={state.id} value={state.id}>
-                  {state.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select your state" />
+              </SelectTrigger>
+              <SelectContent 
+                position="popper"
+                side="bottom"
+                align="start"
+                className="max-h-[300px] overflow-y-auto"
+              >
+                {states.map((state) => (
+                  <SelectItem key={state.id} value={state.id}>
+                    {state.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Full Name */}
@@ -199,31 +226,41 @@ export function SettingsForm({
             />
           </div>
 
-          {/* University */}
+          {/* University - Using Shadcn Select */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               University <span className="text-red-500">*</span>
             </label>
-            <select
-              required
+            <Select
               value={formData.university_id}
-              onChange={(e) => setFormData({ ...formData, university_id: e.target.value })}
+              onValueChange={(value) => setFormData({ ...formData, university_id: value })}
               disabled={!formData.state_id || loadingUniversities}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+              required
             >
-              <option value="">
-                {loadingUniversities
-                  ? 'Loading universities...'
-                  : !formData.state_id
-                  ? 'Select a state first'
-                  : 'Select your university'}
-              </option>
-              {universities.map((uni) => (
-                <option key={uni.id} value={uni.id}>
-                  {uni.name} {uni.short_name ? `(${uni.short_name})` : ''}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full" disabled={!formData.state_id || loadingUniversities}>
+                <SelectValue 
+                  placeholder={
+                    loadingUniversities
+                      ? 'Loading universities...'
+                      : !formData.state_id
+                      ? 'Select a state first'
+                      : 'Select your university'
+                  } 
+                />
+              </SelectTrigger>
+              <SelectContent 
+                position="popper"
+                side="bottom"
+                align="start"
+                className="max-h-[300px] overflow-y-auto"
+              >
+                {universities.map((uni) => (
+                  <SelectItem key={uni.id} value={uni.id}>
+                    {uni.name} {uni.short_name ? `(${uni.short_name})` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {!formData.state_id && (
               <p className="text-xs text-gray-500 mt-1">Please select a state first</p>
             )}
@@ -248,18 +285,26 @@ export function SettingsForm({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Store Category (Optional)
             </label>
-            <select
+            <Select
               value={formData.store_category_id}
-              onChange={(e) => setFormData({ ...formData, store_category_id: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onValueChange={(value) => setFormData({ ...formData, store_category_id: value })}
             >
-              <option value="">Select a category</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a category" />
+              </SelectTrigger>
+              <SelectContent 
+                position="popper"
+                side="bottom"
+                align="start"
+                className="max-h-[300px] overflow-y-auto"
+              >
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={category.id}>
+                    {category.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Phone Number */}

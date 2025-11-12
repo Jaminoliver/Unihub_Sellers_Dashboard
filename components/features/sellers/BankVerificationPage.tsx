@@ -1,8 +1,8 @@
 'use client';
-
-import { useState, useEffect } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
-import { updateBankDetails } from '@/app/dashboard/products/new/actions';import { toast } from 'sonner';
+import { useState, useEffect, useActionState } from 'react'; // <-- Add useActionState here
+import { useFormStatus } from 'react-dom'; // <-- Only useFormStatus stays here
+import { updateBankDetails } from '@/app/dashboard/products/new/actions';
+import { toast } from 'sonner';
 
 // Import Shadcn UI components
 import { Button } from '@/components/ui/button';
@@ -23,8 +23,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { NIGERIAN_BANKS } from '@/lib/banks';
+// REMOVED: import { NIGERIAN_BANKS } from '@/lib/banks';
 import { CheckCircle2, Edit2, Building2, CreditCard, User } from 'lucide-react';
+
+// --- NEW: Type for the bank list ---
+interface Bank {
+  name: string;
+  code: string;
+}
 
 // Define the type for the seller prop
 interface SellerData {
@@ -41,7 +47,7 @@ const initialState = {
   message: null,
 };
 
-// Submit button component
+// Submit button component (No change)
 function SubmitButton() {
   const { pending } = useFormStatus();
 
@@ -52,7 +58,7 @@ function SubmitButton() {
   );
 }
 
-// Bank Details Display Card
+// Bank Details Display Card (No change)
 function BankDetailsDisplay({ 
   seller, 
   onEdit 
@@ -133,28 +139,28 @@ function BankDetailsDisplay({
   );
 }
 
-// Bank Details Form
+// --- MODIFIED: Bank Details Form ---
 function BankDetailsEditForm({ 
   seller, 
-  onCancel 
+  onCancel,
+  bankList // <-- Accepts the new prop
 }: { 
   seller: SellerData; 
   onCancel: () => void;
+  bankList: Bank[]; // <-- Accepts the new prop
 }) {
-  const [state, formAction] = useFormState(updateBankDetails, initialState);
+  const [state, formAction] = useActionState(updateBankDetails, initialState);
 
   useEffect(() => {
     if (state.message) {
       toast.success(state.message);
-      // Refresh the page to show updated details
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
+      // We no longer need to reload, the revalidation should handle it
+      onCancel(); // Go back to display mode
     }
     if (state.error) {
       toast.error(state.error);
     }
-  }, [state]);
+  }, [state, onCancel]);
 
   return (
     <form action={formAction}>
@@ -162,7 +168,7 @@ function BankDetailsEditForm({
         <CardHeader>
           <CardTitle>Update Bank Account</CardTitle>
           <CardDescription>
-            Your account name must match the name on your bank account.
+            Your account will be instantly verified upon saving.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -178,7 +184,8 @@ function BankDetailsEditForm({
                 <SelectValue placeholder="Select your bank" />
               </SelectTrigger>
               <SelectContent>
-                {NIGERIAN_BANKS.map((bank) => (
+                {/* --- THIS IS THE FIX --- */}
+                {bankList.map((bank) => (
                   <SelectItem key={bank.code} value={bank.code}>
                     {bank.name}
                   </SelectItem>
@@ -196,21 +203,17 @@ function BankDetailsEditForm({
               placeholder="10-digit account number"
               defaultValue={seller.bank_account_number || ''}
               maxLength={10}
+              minLength={10}
+              pattern="\d{10}" // Enforce 10 digits
               required
             />
           </div>
 
-          {/* Account Name */}
-          <div className="space-y-2">
-            <Label htmlFor="account_name">Account Name (as registered)</Label>
-            <Input
-              id="account_name"
-              name="account_name"
-              placeholder="The name on your account"
-              defaultValue={seller.account_name || ''}
-              required
-            />
-          </div>
+          {/* --- REMOVED ACCOUNT NAME FIELD ---
+              We get this from Paystack automatically,
+              so the user doesn't need to type it.
+          */}
+          
         </CardContent>
         <CardFooter className="flex gap-3">
           <SubmitButton />
@@ -223,12 +226,17 @@ function BankDetailsEditForm({
   );
 }
 
-// Main Component
-export function BankVerificationPage({ seller }: { seller: SellerData }) {
+// --- MODIFIED: Main Component ---
+export function BankVerificationPage({ 
+  seller, 
+  bankList // <-- Accepts the new prop
+}: { 
+  seller: SellerData;
+  bankList: Bank[]; // <-- Accepts the new prop
+}) {
   const [isEditing, setIsEditing] = useState(false);
   const hasBankDetails = !!seller.bank_account_number;
 
-  // Show form by default if no bank details exist
   useEffect(() => {
     if (!hasBankDetails) {
       setIsEditing(true);
@@ -254,7 +262,8 @@ export function BankVerificationPage({ seller }: { seller: SellerData }) {
       ) : (
         <BankDetailsEditForm 
           seller={seller} 
-          onCancel={() => setIsEditing(false)} 
+          onCancel={() => setIsEditing(false)}
+          bankList={bankList} // <-- Pass the prop down
         />
       )}
     </div>

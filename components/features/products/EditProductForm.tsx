@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react'; // CHANGED from useFormState
+import { useActionState } from 'react';
 import { useEffect, useState } from 'react';
 import { updateProduct } from '@/app/dashboard/products/new/actions';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import {
 import { toast } from 'sonner';
 import { X } from 'lucide-react';
 import Image from 'next/image';
+import { createClient } from '@/lib/supabase/client';
 
 interface Product {
   id: string;
@@ -25,6 +26,7 @@ interface Product {
   price: number;
   stock_quantity: number;
   category_id: string;
+  university_id?: string;
   condition?: string;
   sku?: string;
   original_price?: number;
@@ -39,13 +41,20 @@ interface Category {
   name: string;
 }
 
+interface University {
+  id: string;
+  name: string;
+  short_name?: string;
+}
+
 interface EditProductFormProps {
   product: Product;
   categories: Category[];
+  sellerState: string; // State name from seller's university
 }
 
-export function EditProductForm({ product, categories }: EditProductFormProps) {
-  const [state, formAction] = useActionState( // CHANGED from useFormState
+export function EditProductForm({ product, categories, sellerState }: EditProductFormProps) {
+  const [state, formAction] = useActionState(
     updateProduct.bind(null, product.id),
     { error: null }
   );
@@ -54,6 +63,42 @@ export function EditProductForm({ product, categories }: EditProductFormProps) {
   );
   const [newImages, setNewImages] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [universities, setUniversities] = useState<University[]>([]);
+  const [loadingUniversities, setLoadingUniversities] = useState(true);
+  const [selectedUniversity, setSelectedUniversity] = useState<string>(
+    product.university_id || ''
+  );
+
+  // Fetch universities from seller's state
+  useEffect(() => {
+    const fetchUniversities = async () => {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('universities')
+          .select('id, name, short_name')
+          .eq('state', sellerState)
+          .eq('is_active', true)
+          .order('name');
+
+        if (error) {
+          console.error('Error fetching universities:', error);
+          toast.error('Failed to load universities');
+        } else {
+          setUniversities(data || []);
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        toast.error('An error occurred while loading universities');
+      } finally {
+        setLoadingUniversities(false);
+      }
+    };
+
+    if (sellerState) {
+      fetchUniversities();
+    }
+  }, [sellerState]);
 
   useEffect(() => {
     if (state.error) {
@@ -93,13 +138,29 @@ export function EditProductForm({ product, categories }: EditProductFormProps) {
 
   const totalImages = existingImages.length + newImages.length;
 
+  // ✅ Custom submit handler to validate university
+  const handleSubmit = (formData: FormData) => {
+    if (!selectedUniversity) {
+      toast.error('Please select a university');
+      return;
+    }
+    formAction(formData);
+  };
+
   return (
-    <form action={formAction} className="space-y-6">
+    <form action={handleSubmit} className="space-y-6">
       {/* Keep track of whether we're keeping old images */}
       <input
         type="hidden"
         name="keepOldImages"
         value={existingImages.length > 0 ? 'true' : 'false'}
+      />
+
+      {/* Hidden university field for form submission */}
+      <input
+        type="hidden"
+        name="university_id"
+        value={selectedUniversity}
       />
 
       {/* Existing Images */}
@@ -233,7 +294,12 @@ export function EditProductForm({ product, categories }: EditProductFormProps) {
           <SelectTrigger>
             <SelectValue placeholder="Select a category" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent
+            position="popper"
+            side="bottom"
+            align="start"
+            className="max-h-[300px] overflow-y-auto"
+          >
             {categories.map((category) => (
               <SelectItem key={category.id} value={category.id}>
                 {category.name}
@@ -241,6 +307,47 @@ export function EditProductForm({ product, categories }: EditProductFormProps) {
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      {/* University Dropdown - REQUIRED */}
+      <div>
+        <Label htmlFor="university">University *</Label>
+        <Select
+          value={selectedUniversity}
+          onValueChange={setSelectedUniversity}
+          disabled={loadingUniversities}
+          required
+        >
+          <SelectTrigger className={!selectedUniversity ? 'border-red-500' : ''}>
+            <SelectValue 
+              placeholder={
+                loadingUniversities 
+                  ? 'Loading universities...' 
+                  : 'Select university'
+              } 
+            />
+          </SelectTrigger>
+          <SelectContent
+            position="popper"
+            side="bottom"
+            align="start"
+            className="max-h-[300px] overflow-y-auto"
+          >
+            {universities.map((uni) => (
+              <SelectItem key={uni.id} value={uni.id}>
+                {uni.name} {uni.short_name ? `(${uni.short_name})` : ''}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-gray-500 mt-1">
+          Universities in {sellerState} state
+        </p>
+        {!selectedUniversity && (
+          <p className="text-xs text-red-500 mt-1">
+            University selection is required
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -324,7 +431,11 @@ export function EditProductForm({ product, categories }: EditProductFormProps) {
       </div>
 
       <div className="flex gap-4">
-        <Button type="submit" className="flex-1">
+        <Button 
+          type="submit" 
+          className="flex-1"
+          disabled={!selectedUniversity || loadingUniversities}
+        >
           Update Product
         </Button>
         <Button

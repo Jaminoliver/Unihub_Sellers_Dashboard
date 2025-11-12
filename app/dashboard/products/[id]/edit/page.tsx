@@ -31,20 +31,55 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
     redirect('/login');
   }
 
-  // Get seller ID
-  const { data: seller, error: sellerError } = await supabase
+  // Get seller with university information to get state
+  const { data: sellerData, error: sellerError } = await supabase
     .from('sellers')
-    .select('id')
+    .select(`
+      id,
+      university_id,
+      universities (
+        state,
+        name
+      )
+    `)
     .eq('user_id', user.id)
     .single();
 
-  console.log('Seller:', seller);
+  console.log('Seller:', sellerData);
   console.log('Seller error:', sellerError);
 
-  if (!seller) {
+  // ✅ FIX: Check if seller and universities exist
+  if (!sellerData) {
     console.log('No seller found, redirecting to dashboard');
     redirect('/dashboard');
   }
+
+  // ✅ FIX: Handle the universities property correctly
+  // Supabase can return null, a single object, or an array depending on the relationship
+  const universities = sellerData.universities;
+  
+  if (!universities) {
+    console.log('No university found for seller, redirecting to dashboard');
+    redirect('/dashboard');
+  }
+
+  // ✅ FIX: Get the state - handle both single object and array
+  let sellerState: string;
+  
+  if (Array.isArray(universities)) {
+    // If it's an array, take the first element
+    sellerState = universities[0]?.state;
+  } else {
+    // If it's a single object, use it directly
+    sellerState = (universities as { state: string; name: string }).state;
+  }
+
+  if (!sellerState) {
+    console.log('No state found for seller university, redirecting to dashboard');
+    redirect('/dashboard');
+  }
+
+  console.log('Seller State:', sellerState);
 
   // Fetch the product
   const { data: product, error: productError } = await supabase
@@ -62,7 +97,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
   }
 
   // Verify ownership
-  if (product.seller_id !== seller.id) {
+  if (product.seller_id !== sellerData.id) {
     console.log('Not product owner, redirecting to products list');
     redirect('/dashboard/products');
   }
@@ -88,6 +123,7 @@ export default async function EditProductPage({ params }: EditProductPageProps) 
       <EditProductForm
         product={product}
         categories={categories || []}
+        sellerState={sellerState}
       />
     </div>
   );
