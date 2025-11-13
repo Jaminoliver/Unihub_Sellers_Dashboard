@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Package, Clock, CheckCircle, XCircle, Eye, Truck, DollarSign, Calendar, MapPin, User, Phone, Hash, X, Mail, AlertCircle, Loader2 } from 'lucide-react'
+import { Package, Clock, CheckCircle, XCircle, Eye, Truck, DollarSign, Calendar, MapPin, User, Phone, Hash, X, Mail } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 interface Order {
@@ -43,9 +43,6 @@ export default function OrdersPage() {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('all')
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
-  const [isConfirming, setIsConfirming] = useState(false)
-  const [confirmStatus, setConfirmStatus] = useState<string>('')
-  const [confirmError, setConfirmError] = useState<string>('')
   const supabase = createClient()
 
   useEffect(() => {
@@ -142,59 +139,33 @@ export default function OrdersPage() {
 
   const formatCurrency = (amount: number) => `₦${amount.toLocaleString()}`
 
+ // In your OrdersPage (Next.js)
+  const [isConfirming, setIsConfirming] = useState(false)
+
   const handleConfirmDelivery = async (orderId: string, code: string) => {
-    if (isConfirming) return
+    if (isConfirming) return // Prevent double-clicks
     setIsConfirming(true)
-    setConfirmStatus('Validating delivery code...')
-    setConfirmError('')
-    
     try {
-      console.log('🔄 Starting delivery confirmation...')
-      console.log('Order ID:', orderId)
-      console.log('Delivery Code:', code)
-      
-      setConfirmStatus('Connecting to server...')
-      
-      const { data, error } = await supabase.functions.invoke('release-escrow', {
-        body: { orderId, deliveryCode: code }
-      })
+      // 1. Call the secure Edge Function
+      const { data, error } = await supabase.functions.invoke('release-escrow', {
+        body: { orderId, deliveryCode: code }
+      })
 
-      console.log('📥 Response received:', { data, error })
+      if (error) throw error
 
-      if (error) {
-        console.error('❌ Function invocation error:', error)
-        throw new Error(error.message || 'Failed to confirm delivery')
-      }
+      // 2. Handle success
+      alert(data.message || 'Delivery confirmed and payout initiated!')
+      setSelectedOrder(null)
+      fetchOrders() // Refresh the orders list
 
-      // Check if data contains an error
-      if (data?.error) {
-        console.error('❌ Server returned error:', data.error)
-        throw new Error(data.error)
-      }
-
-      console.log('✅ Success:', data)
-      setConfirmStatus('Success! Delivery confirmed and payout initiated.')
-      
-      // Show success message
-      setTimeout(() => {
-        alert(data.message || 'Delivery confirmed successfully!')
-        setSelectedOrder(null)
-        setConfirmStatus('')
-        fetchOrders()
-      }, 1000)
-
-    } catch (error: any) {
-      console.error('💥 Confirmation failed:', error)
-      const errorMsg = error.message || 'An unknown error occurred'
-      setConfirmError(errorMsg)
-      setConfirmStatus('')
-      
-      // Show detailed error in alert
-      alert(`❌ Confirmation Failed\n\n${errorMsg}\n\nCheck console for more details.`)
-    } finally {
+    } catch (error: any) {
+      // 3. Handle error
+      console.error('Confirmation failed:', error)
+      alert(`Confirmation failed: ${error.message || 'An unknown error occurred.'}`)
+    } finally {
       setIsConfirming(false)
     }
-  }
+  }
 
   const stats = {
     total: orders.length,
@@ -317,22 +288,40 @@ export default function OrdersPage() {
             <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab} className="w-full">
               <div className="border-b border-gray-200 px-4 sm:px-0 overflow-x-auto">
                 <TabsList className="inline-flex h-auto p-0 bg-transparent gap-1 sm:gap-2 min-w-full sm:min-w-0">
-                  <TabsTrigger value="all" className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap">
+                  <TabsTrigger 
+                    value="all" 
+                    className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap"
+                  >
                     All <span className="ml-1 hidden xs:inline">({orders.length})</span>
                   </TabsTrigger>
-                  <TabsTrigger value="pending" className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap">
+                  <TabsTrigger 
+                    value="pending"
+                    className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap"
+                  >
                     Pending <span className="ml-1 hidden xs:inline">({stats.pending})</span>
                   </TabsTrigger>
-                  <TabsTrigger value="processing" className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap">
+                  <TabsTrigger 
+                    value="processing"
+                    className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap"
+                  >
                     Processing
                   </TabsTrigger>
-                  <TabsTrigger value="shipped" className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap">
+                  <TabsTrigger 
+                    value="shipped"
+                    className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap"
+                  >
                     Shipped
                   </TabsTrigger>
-                  <TabsTrigger value="delivered" className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap">
+                  <TabsTrigger 
+                    value="delivered"
+                    className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap"
+                  >
                     Delivered
                   </TabsTrigger>
-                  <TabsTrigger value="cancelled" className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap">
+                  <TabsTrigger 
+                    value="cancelled"
+                    className="data-[state=active]:bg-[#1DA1F2] data-[state=active]:text-white rounded-t-lg px-3 sm:px-4 py-2 text-xs sm:text-sm whitespace-nowrap"
+                  >
                     Cancelled
                   </TabsTrigger>
                 </TabsList>
@@ -350,11 +339,97 @@ export default function OrdersPage() {
                     filterOrders(status).map(order => (
                       <Card key={order.id} className="hover:shadow-lg transition-all duration-200 border-gray-200">
                         <CardContent className="p-4 sm:p-6">
-                          <div className="flex items-start justify-between">
-                            <div className="flex gap-4 flex-1">
-                              <div className="h-20 w-20 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200">
+                          {/* Mobile Layout */}
+                          <div className="block lg:hidden space-y-4">
+                            <div className="flex items-start gap-3">
+                              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200">
                                 {order.product?.image_urls?.[0] ? (
-                                  <img src={order.product.image_urls[0]} alt={order.product.name} className="h-full w-full object-cover" />
+                                  <img 
+                                    src={order.product.image_urls[0]} 
+                                    alt={order.product.name}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="h-full w-full flex items-center justify-center">
+                                    <Package className="h-6 w-6 sm:h-8 sm:w-8 text-gray-400" />
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <h3 className="font-semibold text-base sm:text-lg text-gray-900 truncate">{order.product?.name || 'Product'}</h3>
+                                <p className="text-xs sm:text-sm text-gray-500 flex items-center gap-1 mt-1">
+                                  <Hash className="h-3 w-3" />
+                                  <span className="truncate">{order.order_number}</span>
+                                </p>
+                                <div className="mt-2">
+                                  {getStatusBadge(order.order_status)}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+                              <div className="flex items-center gap-2">
+                                <User className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                <span className="text-gray-700 truncate">{order.buyer?.full_name || 'Customer'}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Package className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                <span className="text-gray-700">Qty: {order.quantity}</span>
+                              </div>
+                              <div className="col-span-2 flex items-center gap-2">
+                                <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                <span className="text-gray-700">{formatDate(order.created_at)}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+                              <div>
+                                <p className="text-xs text-gray-500">Total Amount</p>
+                                <p className="text-xl sm:text-2xl font-bold text-[#1DA1F2]">{formatCurrency(order.total_amount)}</p>
+                              </div>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="border-[#1DA1F2] text-[#1DA1F2] hover:bg-[#1DA1F2] hover:text-white" 
+                                onClick={() => setSelectedOrder(order)}
+                              >
+                                <Eye className="h-4 w-4 sm:mr-2" />
+                                <span className="hidden sm:inline">View</span>
+                              </Button>
+                            </div>
+
+                            {order.order_status === 'pending' && (
+                              <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                                <p className="text-sm font-medium text-amber-900 mb-2">Confirm Delivery</p>
+                                <p className="text-xs text-amber-700 mb-2">Enter 6-digit code from buyer:</p>
+                                <input 
+                                  type="text" 
+                                  maxLength={6}
+                                  placeholder="000000"
+                                  className="w-full p-2 sm:p-3 text-center text-lg sm:text-xl font-bold tracking-widest border-2 border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                  onInput={(e: any) => {
+                                    const val = e.target.value.replace(/\D/g, '')
+                                    e.target.value = val
+                                    if (val.length === 6) {
+                                      handleConfirmDelivery(order.id, val)
+                                    }
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Desktop Layout */}
+                          <div className="hidden lg:flex items-start justify-between">
+                            <div className="flex gap-4 flex-1">
+                              <div className="h-24 w-24 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200">
+                                {order.product?.image_urls?.[0] ? (
+                                  <img 
+                                    src={order.product.image_urls[0]} 
+                                    alt={order.product.name}
+                                    className="h-full w-full object-cover"
+                                  />
                                 ) : (
                                   <div className="h-full w-full flex items-center justify-center">
                                     <Package className="h-8 w-8 text-gray-400" />
@@ -380,16 +455,49 @@ export default function OrdersPage() {
                                     <span className="text-gray-700">{order.buyer?.full_name || 'Customer'}</span>
                                   </div>
                                   <div className="flex items-center gap-2">
+                                    <Calendar className="h-4 w-4 text-gray-400" />
+                                    <span className="text-gray-700">{formatDate(order.created_at)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
                                     <Package className="h-4 w-4 text-gray-400" />
                                     <span className="text-gray-700">Qty: {order.quantity}</span>
                                   </div>
+                                  <div className="flex items-center gap-2">
+                                    {getPaymentMethodBadge(order.payment_method)}
+                                  </div>
                                 </div>
+
+                                {order.order_status === 'pending' && (
+                                  <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
+                                    <p className="text-sm font-medium text-amber-900 mb-2">Confirm Delivery</p>
+                                    <p className="text-xs text-amber-700 mb-2">Enter 6-digit code from buyer:</p>
+                                    <input 
+                                      type="text" 
+                                      maxLength={6}
+                                      placeholder="000000"
+                                      className="w-full p-3 text-center text-xl font-bold tracking-widest border-2 border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                      onInput={(e: any) => {
+                                        const val = e.target.value.replace(/\D/g, '')
+                                        e.target.value = val
+                                        if (val.length === 6) {
+                                          handleConfirmDelivery(order.id, val)
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                )}
                               </div>
                             </div>
 
                             <div className="text-right ml-6">
                               <p className="text-2xl font-bold text-[#1DA1F2]">{formatCurrency(order.total_amount)}</p>
-                              <Button variant="outline" size="sm" className="mt-4 border-[#1DA1F2] text-[#1DA1F2] hover:bg-[#1DA1F2] hover:text-white" onClick={() => setSelectedOrder(order)}>
+                              <p className="text-sm text-gray-500 mt-1">Unit: {formatCurrency(order.unit_price)}</p>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="mt-4 border-[#1DA1F2] text-[#1DA1F2] hover:bg-[#1DA1F2] hover:text-white" 
+                                onClick={() => setSelectedOrder(order)}
+                              >
                                 <Eye className="h-4 w-4 mr-2" />
                                 View Details
                               </Button>
@@ -414,32 +522,145 @@ export default function OrdersPage() {
               <CardHeader className="border-b border-gray-200 bg-gradient-to-r from-[#1DA1F2] to-[#1a8cd8] text-white">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xl sm:text-2xl">Order Details</CardTitle>
-                  <Button variant="ghost" size="sm" className="text-white hover:bg-white/20 h-8 w-8 p-0 rounded-full" onClick={() => setSelectedOrder(null)}>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-white hover:bg-white/20 h-8 w-8 p-0 rounded-full"
+                    onClick={() => setSelectedOrder(null)}
+                  >
                     <X className="h-5 w-5" />
                   </Button>
                 </div>
               </CardHeader>
               <CardContent className="space-y-6 p-4 sm:p-6 max-h-[calc(100vh-200px)] overflow-y-auto">
-                {/* Status Messages */}
-                {(confirmStatus || confirmError) && (
-                  <div className={`p-4 rounded-lg border-2 ${confirmError ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
-                    <div className="flex items-start gap-3">
-                      {confirmError ? (
-                        <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                      ) : (
-                        <Loader2 className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5 animate-spin" />
-                      )}
-                      <div className="flex-1">
-                        <p className={`font-semibold ${confirmError ? 'text-red-900' : 'text-blue-900'}`}>
-                          {confirmError ? 'Error' : 'Processing...'}
-                        </p>
-                        <p className={`text-sm mt-1 ${confirmError ? 'text-red-700' : 'text-blue-700'}`}>
-                          {confirmError || confirmStatus}
-                        </p>
+                {/* Order Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-gray-200">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-500 font-medium">Order Number</p>
+                    <p className="text-base sm:text-lg font-semibold text-gray-900 mt-1">{selectedOrder.order_number}</p>
+                  </div>
+                  <div className="sm:text-right">
+                    <p className="text-xs sm:text-sm text-gray-500 font-medium mb-2">Status</p>
+                    {getStatusBadge(selectedOrder.order_status)}
+                  </div>
+                </div>
+
+              {/* Customer Information - ADD THIS */}
+<div className="border-t pt-4">
+  <h3 className="font-semibold text-base sm:text-lg mb-4 flex items-center gap-2">
+    <User className="h-5 w-5 text-gray-600" />
+    Customer Information
+  </h3>
+  <div className="space-y-3 text-sm bg-gray-50 p-4 rounded-lg">
+    <div className="flex items-start gap-3">
+      <User className="h-5 w-5 text-gray-400 mt-0.5" />
+      <div>
+        <p className="text-gray-600 text-xs">Full Name</p>
+        <p className="font-medium text-gray-900">{selectedOrder.buyer?.full_name || 'N/A'}</p>
+      </div>
+    </div>
+    <div className="flex items-start gap-3">
+      <Mail className="h-5 w-5 text-gray-400 mt-0.5" />
+      <div>
+        <p className="text-gray-600 text-xs">Email</p>
+        <p className="font-medium text-gray-900">{selectedOrder.buyer?.email || 'N/A'}</p>
+      </div>
+    </div>
+    <div className="flex items-start gap-3">
+      <Phone className="h-5 w-5 text-gray-400 mt-0.5" />
+      <div>
+        <p className="text-gray-600 text-xs">Phone Number</p>
+        <p className="font-medium text-gray-900">{selectedOrder.buyer?.phone_number || 'N/A'}</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{/* Delivery Address - ADD THIS */}
+{selectedOrder.delivery_address && (
+  <div className="border-t pt-4">
+    <h3 className="font-semibold text-base sm:text-lg mb-4 flex items-center gap-2">
+      <MapPin className="h-5 w-5 text-gray-600" />
+      Delivery Address
+    </h3>
+    <div className="bg-gray-50 p-4 rounded-lg text-sm space-y-2">
+      <p className="font-medium text-gray-900">{selectedOrder.delivery_address.address_line}</p>
+      {selectedOrder.delivery_address.landmark && (
+        <p className="text-gray-600">
+          <span className="font-medium">Landmark:</span> {selectedOrder.delivery_address.landmark}
+        </p>
+      )}
+      <p className="text-gray-600">
+        {selectedOrder.delivery_address.city}, {selectedOrder.delivery_address.state}
+      </p>
+      {selectedOrder.delivery_address.phone_number && (
+        <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
+          <Phone className="h-4 w-4 text-gray-400" />
+          <span className="text-gray-600">{selectedOrder.delivery_address.phone_number}</span>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
+{/* Product Details - ADD THIS */}
+<div className="border-t pt-4">
+  <h3 className="font-semibold text-base sm:text-lg mb-4">Product Details</h3>
+  <div className="flex gap-4 bg-gray-50 p-4 rounded-lg">
+    <div className="h-20 w-20 rounded-lg bg-gray-200 flex-shrink-0 overflow-hidden">
+      {selectedOrder.product?.image_urls?.[0] ? (
+        <img src={selectedOrder.product.image_urls[0]} alt={selectedOrder.product.name} className="h-full w-full object-cover" />
+      ) : (
+        <div className="h-full w-full flex items-center justify-center">
+          <Package className="h-8 w-8 text-gray-400" />
+        </div>
+      )}
+    </div>
+    <div className="flex-1">
+      <h4 className="font-semibold text-gray-900">{selectedOrder.product?.name || 'Product'}</h4>
+      <p className="text-sm text-gray-600 mt-1">Quantity: {selectedOrder.quantity}</p>
+      <p className="text-sm text-gray-600">Unit Price: {formatCurrency(selectedOrder.unit_price)}</p>
+    </div>
+  </div>
+</div>
+                {/* Payment Information */}
+                <div className="border-t pt-4">
+                  <h3 className="font-semibold text-base sm:text-lg mb-4 flex items-center gap-2">
+                    <DollarSign className="h-5 w-5 text-[#1DA1F2]" />
+                    Payment Information
+                  </h3>
+                  <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600 font-medium">Payment Method:</span>
+                      {getPaymentMethodBadge(selectedOrder.payment_method)}
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600 font-medium">Payment Status:</span>
+                      <span className="font-semibold capitalize text-gray-900">{selectedOrder.payment_status}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-base sm:text-lg font-bold border-t border-gray-300 pt-3 mt-3">
+                      <span className="text-gray-900">Total Amount:</span>
+                      <span className="text-[#1DA1F2] text-xl sm:text-2xl">{formatCurrency(selectedOrder.total_amount)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Order Timeline */}
+                <div className="border-t pt-4">
+                  <h3 className="font-semibold text-base sm:text-lg mb-4 flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-[#1DA1F2]" />
+                    Order Timeline
+                  </h3>
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="flex items-center gap-3 text-sm">
+                      <Clock className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs text-gray-500">Order Placed</p>
+                        <p className="font-medium text-gray-900">{formatDate(selectedOrder.created_at)}</p>
                       </div>
                     </div>
                   </div>
-                )}
+                </div>
 
                 {/* Delivery Confirmation */}
                 {selectedOrder.order_status === 'pending' && (
@@ -456,40 +677,38 @@ export default function OrdersPage() {
                         inputMode="numeric"
                         maxLength={6}
                         placeholder="000000"
-                        disabled={isConfirming}
-                        className="w-full p-3 sm:p-4 text-center text-2xl sm:text-3xl font-bold tracking-widest border-2 border-blue-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-blue-400 focus:border-blue-500 bg-white shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full p-3 sm:p-4 text-center text-2xl sm:text-3xl font-bold tracking-widest border-2 border-blue-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-blue-400 focus:border-blue-500 bg-white shadow-sm transition-all"
                         onInput={(e: any) => {
                           const val = e.target.value.replace(/\D/g, '')
                           e.target.value = val
-                          if (val.length === 6 && !isConfirming) {
+                          if (val.length === 6) {
                             handleConfirmDelivery(selectedOrder.id, val)
                           }
                         }}
                       />
-                      <p className="text-xs text-gray-500 mt-3 text-center">
-                        {isConfirming ? 'Processing confirmation...' : 'Code will auto-submit when 6 digits are entered'}
-                      </p>
+                      <p className="text-xs text-gray-500 mt-3 text-center">Code will auto-submit when 6 digits are entered</p>
                     </div>
                   </div>
                 )}
 
-                {/* Rest of order details */}
-                <div className="border-t pt-4">
-                  <h3 className="font-semibold text-base sm:text-lg mb-4">Order Information</h3>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Order Number:</span>
-                      <span className="font-medium">{selectedOrder.order_number}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Status:</span>
-                      {getStatusBadge(selectedOrder.order_status)}
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Total Amount:</span>
-                      <span className="font-bold text-[#1DA1F2] text-lg">{formatCurrency(selectedOrder.total_amount)}</span>
-                    </div>
-                  </div>
+                {/* Action Buttons */}
+                <div className="border-t pt-4 flex flex-col sm:flex-row gap-3">
+                  <Button 
+                    variant="outline" 
+                    className="flex-1 border-gray-300 hover:bg-gray-50"
+                    onClick={() => setSelectedOrder(null)}
+                  >
+                    Close
+                  </Button>
+                  <Button 
+                    className="flex-1 bg-[#1DA1F2] hover:bg-[#1a8cd8] text-white"
+                    onClick={() => {
+                      // Add print or export functionality here
+                      alert('Print/Export functionality would go here')
+                    }}
+                  >
+                    Print Order
+                  </Button>
                 </div>
               </CardContent>
             </Card>

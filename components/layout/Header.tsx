@@ -4,7 +4,11 @@ import { Search, Bell, HelpCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { HeaderSignOut } from './HeaderSignOut';
+import { HeaderSignOut } from './HeaderSignOut'
+import { NotificationsDropdown } from '@/components/notifications/notifications-dropdown'
+import { useNotifications } from '@/hooks/use-notifications'
+import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,11 +21,41 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 interface HeaderProps {
   sellerName?: string
-  notificationCount?: number
+  userId?: string
 }
 
-export function Header({ sellerName = 'BrightBooks NG', notificationCount = 3 }: HeaderProps) {
-  const initials = sellerName
+export function Header({ sellerName, userId: initialUserId }: HeaderProps) {
+  const [userId, setUserId] = useState<string | undefined>(initialUserId)
+  const [displayName, setDisplayName] = useState(sellerName || 'Seller')
+  const supabase = createClient()
+
+  useEffect(() => {
+    async function fetchUserData() {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (user) {
+        setUserId(user.id)
+        
+        // Fetch seller profile
+        const { data: seller } = await supabase
+          .from('sellers')
+          .select('business_name, profiles(full_name)')
+          .eq('user_id', user.id)
+          .single()
+        
+        if (seller) {
+          const name = seller.business_name || (seller.profiles as any)?.full_name || user.email?.split('@')[0] || 'Seller'
+          setDisplayName(name)
+        }
+      }
+    }
+
+    if (!initialUserId || !sellerName) {
+      fetchUserData()
+    }
+  }, [initialUserId, sellerName, supabase])
+
+  const initials = displayName
     .split(' ')
     .map((n) => n[0])
     .join('')
@@ -45,45 +79,8 @@ export function Header({ sellerName = 'BrightBooks NG', notificationCount = 3 }:
 
         {/* Right Side - Notifications, Help, Avatar */}
         <div className="flex items-center gap-3">
-          {/* Notifications */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                {notificationCount > 0 && (
-                  <Badge className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary p-0 text-xs">
-                    {notificationCount}
-                  </Badge>
-                )}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium">New Order Received</p>
-                  <p className="text-xs text-gray-500">Order #ORD-1024 from Chinedu</p>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium">Low Stock Alert</p>
-                  <p className="text-xs text-gray-500">Engineering Mathematics is running low</p>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium">Payout Processed</p>
-                  <p className="text-xs text-gray-500">₦159,740 has been sent to your account</p>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-center text-sm text-primary">
-                View all notifications
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Notifications - Using our new NotificationsDropdown */}
+          {userId && <NotificationsDropdown userId={userId} />}
 
           {/* Help */}
           <Button variant="ghost" size="icon">
@@ -104,7 +101,7 @@ export function Header({ sellerName = 'BrightBooks NG', notificationCount = 3 }:
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">{sellerName}</p>
+                  <p className="text-sm font-medium">{displayName}</p>
                   <p className="text-xs text-gray-500">Seller Account</p>
                 </div>
               </DropdownMenuLabel>
