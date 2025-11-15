@@ -5,7 +5,17 @@ import { DollarSign, ShoppingCart, Package, TrendingUp, Clock } from 'lucide-rea
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { formatDistanceToNow } from 'date-fns'
+import { formatDistanceToNow, format, subDays } from 'date-fns'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts'
 
 interface DashboardStats {
   totalRevenue: number
@@ -42,6 +52,8 @@ export default function DashboardPage() {
     conversionChange: '+0%',
   })
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([])
+  const [allOrders, setAllOrders] = useState<RecentOrder[]>([]) // <-- ADD THIS
+  const [chartData, setChartData] = useState<{ date: string; revenue: number }[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
   const router = useRouter()
@@ -134,6 +146,31 @@ export default function DashboardPage() {
           buyer_location: (order.profiles as any)?.delivery_address || 'No address'
         }))
 
+        // Calculate chart data (last 7 days)
+        const last7Days = Array.from({ length: 7 }, (_, i) => {
+          const date = subDays(new Date(), 6 - i)
+          return format(date, 'MMM dd')
+        })
+
+        const revenueByDate: { [key: string]: number } = {}
+        last7Days.forEach(date => {
+          revenueByDate[date] = 0
+        })
+
+        completedOrders.forEach(order => {
+          const orderDate = format(new Date(order.created_at), 'MMM dd')
+          if (revenueByDate.hasOwnProperty(orderDate)) {
+            revenueByDate[orderDate] += parseFloat(order.total_amount || '0')
+          }
+        })
+
+        const chartData = last7Days.map(date => ({
+          date,
+          revenue: Math.round(revenueByDate[date] || 0)
+        }))
+
+        setChartData(chartData)
+
         setStats({
           totalRevenue,
           revenueChange: '+15.3%', // Calculate based on previous period
@@ -146,6 +183,7 @@ export default function DashboardPage() {
         })
 
         setRecentOrders(recent)
+        setAllOrders(allOrders)
       } catch (error) {
         console.error('Error fetching dashboard data:', error)
       } finally {
@@ -268,14 +306,35 @@ export default function DashboardPage() {
         })}
       </div>
 
-      {/* Sales Overview Chart Placeholder */}
+      {/* Sales Overview Chart */}
       <Card>
         <CardHeader>
-          <CardTitle>Sales Overview</CardTitle>
+          <CardTitle>Sales Overview (Last 7 Days)</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex h-[300px] items-center justify-center border-2 border-dashed border-gray-200 rounded-lg">
-            <p className="text-gray-400">Chart will go here (integrate Recharts or similar)</p>
+          <div className="h-[300px]">
+            {allOrders.length === 0 ? (
+              <div className="flex h-full items-center justify-center border-2 border-dashed border-gray-200 rounded-lg">
+                <p className="text-gray-400">No sales data yet</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip formatter={(value) => `₦${value.toLocaleString()}`} />
+                  <Legend />
+                  <Line 
+                    type="monotone" 
+                    dataKey="revenue" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2}
+                    name="Revenue (₦)"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </CardContent>
       </Card>

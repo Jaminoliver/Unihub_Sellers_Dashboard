@@ -9,6 +9,7 @@ import { NotificationsDropdown } from '@/components/notifications/notifications-
 import { useNotifications } from '@/hooks/use-notifications'
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +29,7 @@ export function Header({ sellerName, userId: initialUserId }: HeaderProps) {
   const [userId, setUserId] = useState<string | undefined>(initialUserId)
   const [displayName, setDisplayName] = useState(sellerName || 'Seller')
   const supabase = createClient()
+  const router = useRouter()
 
   useEffect(() => {
     async function fetchUserData() {
@@ -106,9 +108,15 @@ export function Header({ sellerName, userId: initialUserId }: HeaderProps) {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Profile</DropdownMenuItem>
-              <DropdownMenuItem>Settings</DropdownMenuItem>
-              <DropdownMenuItem>Verification</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push('/dashboard/profile')}>
+                Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push('/dashboard/settings')}>
+                Settings
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push('/dashboard/account/verification')}>
+                Verification
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <HeaderSignOut />
             </DropdownMenuContent>
