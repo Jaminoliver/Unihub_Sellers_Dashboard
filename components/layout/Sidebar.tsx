@@ -52,10 +52,10 @@ const navigation = [
     icon: Megaphone,
   },
   {
-    name: 'Payouts / Finances',
-    href: '/dashboard/payouts',
-    icon: Wallet,
-  },
+  name: 'Finance',
+  href: '/dashboard/finance',
+  icon: Wallet,
+},
   {
     name: 'Account / Verification',
     href: '/dashboard/account/verification',
