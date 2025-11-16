@@ -12,14 +12,15 @@ const productSchema = z.object({
   description: z.string().min(20, 'Description must be at least 20 characters'),
   price: z.coerce.number().min(1, 'Price must be greater than 0'),
   stock: z.coerce.number().min(0, 'Stock cannot be negative'),
-  category: z.string().uuid('Invalid category'),
-  university_id: z.string().uuid('Invalid university').optional(),
+  category: z.string().min(1, 'Invalid category'),
+  university_id: z.string().min(1, 'Invalid university').optional(),
   condition: z.string().optional(),
   sku: z.string().optional(),
   original_price: z.coerce.number().optional(),
   discount_percentage: z.coerce.number().optional(),
   brand: z.string().optional(),
-  color: z.string().optional(),
+  colors: z.string().optional(),
+  sizes: z.string().optional(),
 });
 
 // --- (FIXED) Zod schema for bank details ---
@@ -68,15 +69,18 @@ export async function addProduct(
     price: formData.get('price'),
     stock: formData.get('stock'),
     category: formData.get('category'),
+    university_id: formData.get('university_id'),
     condition: formData.get('condition'),
-    sku: formData.get('sku'),
-    original_price: formData.get('original_price'),
-    discount_percentage: formData.get('discount_percentage'),
-    brand: formData.get('brand'),
-    color: formData.get('color'),
+    sku: formData.get('sku') || undefined,
+    original_price: formData.get('original_price') || undefined,
+    discount_percentage: formData.get('discount_percentage') || undefined,
+    brand: formData.get('brand') || undefined,
+    colors: formData.get('colors') || undefined,
+    sizes: formData.get('sizes') || undefined,
   });
 
   if (!validatedFields.success) {
+    console.error("❌ university_id from form:", formData.get("university_id"));
     console.error(
       'Validation errors:',
       validatedFields.error.flatten().fieldErrors
@@ -93,24 +97,26 @@ export async function addProduct(
     price,
     stock,
     category,
+    university_id,
     condition,
     sku,
     original_price,
     discount_percentage,
     brand,
-    color,
+    colors,
+    sizes,
   } = validatedFields.data;
 
   // 4. Handle Image Uploads
   const images = formData.getAll('images') as File[];
   const imageUrls: string[] = [];
 
-  if (images.length < 3) {
-    return { error: 'You must upload at least 3 images.' };
+  if (images.length < 1) {
+    return { error: 'You must upload at least 1 image.' };
   }
 
-  if (images.length > 8) {
-    return { error: 'You can upload a maximum of 8 images.' };
+  if (images.length > 5) {
+    return { error: 'You can upload a maximum of 5 images.' };
   }
 
   for (const image of images) {
@@ -134,6 +140,9 @@ export async function addProduct(
   }
 
   // 5. Insert the new product into the database
+  const sizesArray = sizes ? JSON.parse(sizes) : [];
+  const colorsArray = colors ? JSON.parse(colors) : [];
+  
   const { error: insertError } = await supabase.from('products').insert({
     name,
     description,
@@ -141,7 +150,7 @@ export async function addProduct(
     stock_quantity: stock,
     category_id: category,
     seller_id: seller.id,
-    university_id: seller.university_id,
+    university_id: university_id,
     image_urls: imageUrls,
     is_available: stock > 0,
     condition: condition || 'new',
@@ -149,12 +158,19 @@ export async function addProduct(
     original_price: original_price || null,
     discount_percentage: discount_percentage || 0,
     brand: brand || null,
-    color: color || null,
+    color: colorsArray,
+    sizes: sizesArray,
   });
 
   if (insertError) {
     console.error('Database insert error:', insertError);
-    return { error: 'Failed to save product to database.' };
+    console.error('Insert data:', {
+      name,
+      category_id: category,
+      university_id: university_id,
+      seller_id: seller.id,
+    });
+    return { error: `Failed to save product: ${insertError.message}` };
   }
 
   revalidatePath('/dashboard/products');
@@ -217,11 +233,12 @@ export async function updateProduct(
     category: formData.get('category'),
     university_id: universityIdValue && universityIdValue !== '' ? universityIdValue : undefined,
     condition: formData.get('condition'),
-    sku: formData.get('sku'),
-    original_price: formData.get('original_price'),
-    discount_percentage: formData.get('discount_percentage'),
-    brand: formData.get('brand'),
-    color: formData.get('color'),
+    sku: formData.get('sku') || undefined,
+    original_price: formData.get('original_price') || undefined,
+    discount_percentage: formData.get('discount_percentage') || undefined,
+    brand: formData.get('brand') || undefined,
+    colors: formData.get('colors') || undefined,
+    sizes: formData.get('sizes') || undefined,
   });
 
   if (!validatedFields.success) {
@@ -247,7 +264,8 @@ export async function updateProduct(
     original_price,
     discount_percentage,
     brand,
-    color,
+    colors,
+    sizes,
   } = validatedFields.data;
 
   // 5. Handle new image uploads (if any)
@@ -294,6 +312,9 @@ export async function updateProduct(
   }
 
   // 6. Update the product in the database
+  const sizesArray = sizes ? JSON.parse(sizes) : [];
+  const colorsArray = colors ? JSON.parse(colors) : [];
+  
   const { error: updateError } = await supabase
     .from('products')
     .update({
@@ -310,7 +331,8 @@ export async function updateProduct(
       original_price: original_price || null,
       discount_percentage: discount_percentage || 0,
       brand: brand || null,
-      color: color || null,
+      color: colorsArray,
+      sizes: sizesArray,
       updated_at: new Date().toISOString(),
     })
     .eq('id', productId);

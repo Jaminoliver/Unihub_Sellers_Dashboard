@@ -32,7 +32,8 @@ interface Product {
   original_price?: number;
   discount_percentage?: number;
   brand?: string;
-  color?: string;
+  colors?: string[];
+  sizes?: string[];
   image_urls?: string[];
 }
 
@@ -68,6 +69,16 @@ export function EditProductForm({ product, categories, sellerState }: EditProduc
   const [selectedUniversity, setSelectedUniversity] = useState<string>(
     product.university_id || ''
   );
+  const [selectedSizes, setSelectedSizes] = useState<string[]>(product.sizes || []);
+  const [sizeType, setSizeType] = useState<'clothing' | 'shoes' | 'none'>('none');
+  const [price, setPrice] = useState(product.price);
+  const [originalPrice, setOriginalPrice] = useState(product.original_price || 0);
+  const [selectedColors, setSelectedColors] = useState<string[]>(product.colors || []);
+  const [customColor, setCustomColor] = useState('');
+  
+  const discountPercentage = originalPrice && originalPrice > 0 && price > 0
+    ? Math.round(((originalPrice - price) / originalPrice) * 100)
+    : 0;
 
   // Fetch universities from seller's state
   useEffect(() => {
@@ -99,6 +110,18 @@ export function EditProductForm({ product, categories, sellerState }: EditProduc
       fetchUniversities();
     }
   }, [sellerState]);
+
+  // Detect size type from existing sizes
+  useEffect(() => {
+    if (product.sizes && product.sizes.length > 0) {
+      const firstSize = product.sizes[0];
+      if (['XS', 'S', 'M', 'L', 'XL', 'XXL'].includes(firstSize)) {
+        setSizeType('clothing');
+      } else if (!isNaN(Number(firstSize))) {
+        setSizeType('shoes');
+      }
+    }
+  }, [product.sizes]);
 
   useEffect(() => {
     if (state.error) {
@@ -259,14 +282,15 @@ export function EditProductForm({ product, categories, sellerState }: EditProduc
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div>
-          <Label htmlFor="price">Price (₦) *</Label>
+          <Label htmlFor="price">Current Price (₦) *</Label>
           <Input
             type="number"
             id="price"
             name="price"
-            defaultValue={product.price}
+            value={price}
+            onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
             required
             min="1"
             step="0.01"
@@ -275,17 +299,41 @@ export function EditProductForm({ product, categories, sellerState }: EditProduc
         </div>
 
         <div>
-          <Label htmlFor="stock">Stock Quantity *</Label>
+          <Label htmlFor="original_price">Original Price (Optional)</Label>
           <Input
             type="number"
-            id="stock"
-            name="stock"
-            defaultValue={product.stock_quantity}
-            required
+            id="original_price"
+            name="original_price"
+            value={originalPrice}
+            onChange={(e) => setOriginalPrice(parseFloat(e.target.value) || 0)}
             min="0"
-            placeholder="0"
+            step="0.01"
+            placeholder="0.00"
           />
         </div>
+
+        <div>
+          <Label>Discount</Label>
+          <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+            <p className="text-lg font-bold text-green-600">
+              {discountPercentage > 0 ? `${discountPercentage}% OFF` : 'No discount'}
+            </p>
+          </div>
+          <input type="hidden" name="discount_percentage" value={discountPercentage} />
+        </div>
+      </div>
+
+      <div>
+        <Label htmlFor="stock">Stock Quantity *</Label>
+        <Input
+          type="number"
+          id="stock"
+          name="stock"
+          defaultValue={product.stock_quantity}
+          required
+          min="0"
+          placeholder="0"
+        />
       </div>
 
       <div>
@@ -378,55 +426,159 @@ export function EditProductForm({ product, categories, sellerState }: EditProduc
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="original_price">Original Price (₦)</Label>
-          <Input
-            type="number"
-            id="original_price"
-            name="original_price"
-            defaultValue={product.original_price || ''}
-            min="0"
-            step="0.01"
-            placeholder="0.00"
-          />
-        </div>
+      <div>
+        <Label htmlFor="brand">Brand (Optional)</Label>
+        <Input
+          type="text"
+          id="brand"
+          name="brand"
+          defaultValue={product.brand || ''}
+          placeholder="Product brand"
+        />
+      </div>
 
-        <div>
-          <Label htmlFor="discount_percentage">Discount %</Label>
-          <Input
-            type="number"
-            id="discount_percentage"
-            name="discount_percentage"
-            defaultValue={product.discount_percentage || 0}
-            min="0"
-            max="100"
-            placeholder="0"
-          />
+      {/* Colors */}
+      <div>
+        <Label>Colors (Optional)</Label>
+        <div className="space-y-3 mt-2">
+          <div className="flex flex-wrap gap-2">
+            {['Black', 'White', 'Red', 'Blue', 'Green', 'Yellow', 'Grey', 'Brown'].map((color) => (
+              <Button
+                key={color}
+                type="button"
+                variant={selectedColors.includes(color) ? 'default' : 'outline'}
+                onClick={() => {
+                  setSelectedColors(prev =>
+                    prev.includes(color) ? prev.filter(c => c !== color) : [...prev, color]
+                  );
+                }}
+                className="h-8 text-xs"
+              >
+                {color}
+              </Button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Custom color"
+              value={customColor}
+              onChange={(e) => setCustomColor(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && customColor.trim()) {
+                  e.preventDefault();
+                  setSelectedColors(prev => [...prev, customColor.trim()]);
+                  setCustomColor('');
+                }
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (customColor.trim()) {
+                  setSelectedColors(prev => [...prev, customColor.trim()]);
+                  setCustomColor('');
+                }
+              }}
+            >
+              Add
+            </Button>
+          </div>
+          {selectedColors.length > 0 && (
+            <p className="text-sm text-gray-600">
+              Selected: {selectedColors.join(', ')}
+            </p>
+          )}
+          <input type="hidden" name="colors" value={JSON.stringify(selectedColors)} />
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor="brand">Brand</Label>
-          <Input
-            type="text"
-            id="brand"
-            name="brand"
-            defaultValue={product.brand || ''}
-            placeholder="Product brand"
-          />
-        </div>
+      {/* Product Sizes */}
+      <div>
+        <Label>Product Sizes (Optional)</Label>
+        <div className="space-y-4 mt-2">
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant={sizeType === 'none' ? 'default' : 'outline'}
+              onClick={() => {
+                setSizeType('none');
+                setSelectedSizes([]);
+              }}
+              className="flex-1"
+            >
+              No Size
+            </Button>
+            <Button
+              type="button"
+              variant={sizeType === 'clothing' ? 'default' : 'outline'}
+              onClick={() => {
+                setSizeType('clothing');
+                setSelectedSizes([]);
+              }}
+              className="flex-1"
+            >
+              Clothing
+            </Button>
+            <Button
+              type="button"
+              variant={sizeType === 'shoes' ? 'default' : 'outline'}
+              onClick={() => {
+                setSizeType('shoes');
+                setSelectedSizes([]);
+              }}
+              className="flex-1"
+            >
+              Shoes
+            </Button>
+          </div>
 
-        <div>
-          <Label htmlFor="color">Color</Label>
-          <Input
-            type="text"
-            id="color"
-            name="color"
-            defaultValue={product.color || ''}
-            placeholder="Product color"
-          />
+          {sizeType === 'clothing' && (
+            <div className="flex flex-wrap gap-2">
+              {['XS', 'S', 'M', 'L', 'XL', 'XXL'].map((size) => (
+                <Button
+                  key={size}
+                  type="button"
+                  variant={selectedSizes.includes(size) ? 'default' : 'outline'}
+                  onClick={() => {
+                    setSelectedSizes(prev =>
+                      prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size]
+                    );
+                  }}
+                  className="w-16"
+                >
+                  {size}
+                </Button>
+              ))}
+            </div>
+          )}
+
+          {sizeType === 'shoes' && (
+            <div className="flex flex-wrap gap-2">
+              {['36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'].map((size) => (
+                <Button
+                  key={size}
+                  type="button"
+                  variant={selectedSizes.includes(size) ? 'default' : 'outline'}
+                  onClick={() => {
+                    setSelectedSizes(prev =>
+                      prev.includes(size) ? prev.filter(s => s !== size) : [...prev, size]
+                    );
+                  }}
+                  className="w-12"
+                >
+                  {size}
+                </Button>
+              ))}
+            </div>
+          )}
+
+          {selectedSizes.length > 0 && (
+            <p className="text-sm text-gray-600">
+              Selected: {selectedSizes.join(', ')}
+            </p>
+          )}
+          <input type="hidden" name="sizes" value={JSON.stringify(selectedSizes)} />
         </div>
       </div>
 

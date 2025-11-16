@@ -1,26 +1,57 @@
-export const NIGERIAN_BANKS = [
+// lib/banks.ts
+
+export interface Bank {
+  name: string;
+  code: string;
+}
+
+export const NIGERIAN_BANKS: Bank[] = [
   { name: 'Access Bank', code: '044' },
+  { name: 'Access Bank (Diamond)', code: '063' },
+  { name: 'ALAT by WEMA', code: '035A' },
+  { name: 'ASO Savings and Loans', code: '401' },
+  { name: 'Bowen Microfinance Bank', code: '50931' },
+  { name: 'CEMCS Microfinance Bank', code: '50823' },
   { name: 'Citibank Nigeria', code: '023' },
   { name: 'Ecobank Nigeria', code: '050' },
+  { name: 'Ekondo Microfinance Bank', code: '562' },
   { name: 'Fidelity Bank', code: '070' },
   { name: 'First Bank of Nigeria', code: '011' },
   { name: 'First City Monument Bank', code: '214' },
   { name: 'Globus Bank', code: '00103' },
   { name: 'Guaranty Trust Bank', code: '058' },
+  { name: 'Hackman Microfinance Bank', code: '51251' },
+  { name: 'Hasal Microfinance Bank', code: '50383' },
   { name: 'Heritage Bank', code: '030' },
+  { name: 'Infinity MFB', code: '50457' },
   { name: 'Jaiz Bank', code: '301' },
   { name: 'Keystone Bank', code: '082' },
+  { name: 'Kuda Bank', code: '50211' },
+  { name: 'Lagos Building Investment Company Plc.', code: '90052' },
+  { name: 'Lotus Bank', code: '303' },
+  { name: 'Mayfresh Mortgage Bank', code: '50563' },
+  { name: 'Moniepoint MFB', code: '50515' },
+  { name: 'Opay', code: '999992' },
+  { name: 'Optimus Bank', code: '107' },
+  { name: 'PalmPay', code: '999991' },
+  { name: 'Parallex Bank', code: '104' },
+  { name: 'Parkway - ReadyCash', code: '311' },
+  { name: 'Paycom', code: '999995' },
   { name: 'Polaris Bank', code: '076' },
   { name: 'Providus Bank', code: '101' },
+  { name: 'Rubies MFB', code: '125' },
+  { name: 'Sparkle Microfinance Bank', code: '51310' },
   { name: 'Stanbic IBTC Bank', code: '221' },
   { name: 'Standard Chartered Bank', code: '068' },
   { name: 'Sterling Bank', code: '232' },
   { name: 'Suntrust Bank', code: '100' },
+  { name: 'TAJ Bank', code: '302' },
+  { name: 'TCF MFB', code: '51211' },
   { name: 'Titan Trust Bank', code: '102' },
   { name: 'Union Bank of Nigeria', code: '032' },
   { name: 'United Bank For Africa', code: '033' },
   { name: 'Unity Bank', code: '215' },
+  { name: 'VFD Microfinance Bank Limited', code: '566' },
   { name: 'Wema Bank', code: '035' },
   { name: 'Zenith Bank', code: '057' },
-  // You can add more banks from the Paystack list if needed
 ];

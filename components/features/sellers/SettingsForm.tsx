@@ -43,6 +43,7 @@ export function SettingsForm({
   const [formData, setFormData] = useState({
     business_name: seller.business_name || '',
     full_name: seller.full_name || '',
+    email: seller.email || '',
     phone_number: seller.phone_number || '',
     pickup_address: seller.pickup_address || '',
     description: seller.description || '',
@@ -119,7 +120,7 @@ export function SettingsForm({
     try {
       const supabase = createClient();
       
-      // ✅ FIX: Get the selected university's state name
+      // Get the selected university's state name
       const selectedUniversity = universities.find(u => u.id === formData.university_id);
       const stateName = selectedUniversity?.state || null;
 
@@ -128,18 +129,19 @@ export function SettingsForm({
         state: stateName,
       });
 
-      // ✅ FIX: Update both university_id AND state columns
+      // Update both university_id AND state columns
       const { error } = await supabase
         .from('sellers')
         .update({
           business_name: formData.business_name,
           full_name: formData.full_name,
+          email: formData.email,
           phone_number: formData.phone_number,
           pickup_address: formData.pickup_address,
           description: formData.description || null,
           store_category_id: formData.store_category_id || null,
           university_id: formData.university_id || null,
-          state: stateName, // ✅ ADDED: Update state column
+          state: stateName,
           updated_at: new Date().toISOString(),
         })
         .eq('id', seller.id);
@@ -183,7 +185,7 @@ export function SettingsForm({
             />
           </div>
 
-          {/* State - Using Shadcn Select */}
+          {/* State */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               State <span className="text-red-500">*</span>
@@ -226,7 +228,7 @@ export function SettingsForm({
             />
           </div>
 
-          {/* University - Using Shadcn Select */}
+          {/* University */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               University <span className="text-red-500">*</span>
@@ -266,31 +268,33 @@ export function SettingsForm({
             )}
           </div>
 
-          {/* Business Email (Read-only) */}
+          {/* Business Email */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Business Email
+              Business Email <span className="text-red-500">*</span>
             </label>
             <input
               type="email"
-              value={seller.email}
-              disabled
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed"
+              required
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="business@example.com"
             />
-            <p className="text-xs text-gray-500 mt-1">Email cannot be changed here</p>
           </div>
 
           {/* Store Category */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Store Category (Optional)
+              Store Category <span className="text-red-500">*</span>
             </label>
             <Select
               value={formData.store_category_id}
               onValueChange={(value) => setFormData({ ...formData, store_category_id: value })}
+              required
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a category" />
+                <SelectValue placeholder="Select your store category" />
               </SelectTrigger>
               <SelectContent 
                 position="popper"
@@ -305,6 +309,9 @@ export function SettingsForm({
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-gray-500 mt-1">
+              This helps customers find your store easily
+            </p>
           </div>
 
           {/* Phone Number */}
@@ -322,24 +329,10 @@ export function SettingsForm({
             />
           </div>
 
-          {/* Local Government Area (Optional) - Placeholder for future */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Local Government Area (Optional)
-            </label>
-            <input
-              type="text"
-              disabled
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-400 cursor-not-allowed"
-              placeholder="e.g., Ojo"
-            />
-            <p className="text-xs text-gray-500 mt-1">Coming soon</p>
-          </div>
-
-          {/* Pickup Address */}
+          {/* Store Address / Full Location */}
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Pickup Address <span className="text-red-500">*</span>
+              Store Address / Full Location Description <span className="text-red-500">*</span>
             </label>
             <textarea
               required
@@ -347,8 +340,11 @@ export function SettingsForm({
               value={formData.pickup_address}
               onChange={(e) => setFormData({ ...formData, pickup_address: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-              placeholder="number 13, thinkers corner estate"
+              placeholder="E.g., Shop 12, Main Campus Gate, University of Benin, Ugbowo"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Provide clear directions to help buyers find your store location
+            </p>
           </div>
 
           {/* Description */}
@@ -365,46 +361,6 @@ export function SettingsForm({
             />
           </div>
         </div>
-      </div>
-
-      {/* Bank Details Section (Optional - Placeholder for future) */}
-      <div className="bg-white shadow rounded-lg p-6">
-        <h2 className="text-xl font-semibold mb-4">Bank Details (Optional)</h2>
-        <p className="text-sm text-gray-500 mb-6">
-          Add your bank details for seamless payments.
-        </p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Bank Name */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Bank Name
-            </label>
-            <input
-              type="text"
-              disabled
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-400 cursor-not-allowed"
-              placeholder="e.g., GTBank"
-            />
-          </div>
-
-          {/* Account Number */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Account Number
-            </label>
-            <input
-              type="text"
-              disabled
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-400 cursor-not-allowed"
-              placeholder="e.g., 0123456789"
-            />
-          </div>
-        </div>
-
-        <p className="text-xs text-gray-500 mt-4">
-          Bank details feature coming soon
-        </p>
       </div>
 
       {/* Submit Button */}

@@ -2,29 +2,24 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { createClient } from '@/lib/supabase/client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, Mail, Phone, Building2, MapPin, Calendar, Shield } from 'lucide-react'
+import { User, Mail, Phone, Building2, MapPin, Calendar, Shield, Package } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
 interface SellerProfile {
   business_name: string
-  business_phone: string
-  business_email: string
-  business_description: string
-  bank_name: string
-  account_number: string
-  account_name: string
+  full_name: string
+  email: string
+  phone_number: string
+  pickup_address: string
+  description: string
+  state: string
   is_verified: boolean
   created_at: string
-  profile: {
-    full_name: string
-    email: string
-    phone_number: string
+  store_category: {
+    name: string
   }
   university: {
     name: string
@@ -35,14 +30,6 @@ interface SellerProfile {
 export default function ProfilePage() {
   const [profile, setProfile] = useState<SellerProfile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [editForm, setEditForm] = useState({
-    business_name: '',
-    business_phone: '',
-    business_email: '',
-    business_description: '',
-  })
   const supabase = createClient()
   const router = useRouter()
 
@@ -62,7 +49,7 @@ export default function ProfilePage() {
         .from('sellers')
         .select(`
           *,
-          profile:profiles!sellers_user_id_fkey(full_name, email, phone_number),
+          store_category:store_category_id(name),
           university:universities(name, state)
         `)
         .eq('user_id', user.id)
@@ -74,44 +61,10 @@ export default function ProfilePage() {
       }
 
       setProfile(data as any)
-      setEditForm({
-        business_name: data.business_name || '',
-        business_phone: data.business_phone || '',
-        business_email: data.business_email || '',
-        business_description: data.business_description || '',
-      })
     } catch (error) {
       console.error('Error:', error)
     } finally {
       setLoading(false)
-    }
-  }
-
-  async function handleSave() {
-    try {
-      setSaving(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { error } = await supabase
-        .from('sellers')
-        .update({
-          business_name: editForm.business_name,
-          business_phone: editForm.business_phone,
-          business_email: editForm.business_email,
-          business_description: editForm.business_description,
-        })
-        .eq('user_id', user.id)
-
-      if (error) throw error
-
-      await fetchProfile()
-      setEditing(false)
-    } catch (error) {
-      console.error('Error saving:', error)
-      alert('Failed to save changes')
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -137,116 +90,55 @@ export default function ProfilePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Profile</h1>
-          <p className="text-gray-500 mt-1">Manage your seller account information</p>
+          <p className="text-gray-500 mt-1">View your seller account information</p>
         </div>
-        <div className="flex gap-2">
-          {editing ? (
-            <>
-              <Button variant="outline" onClick={() => setEditing(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </>
-          ) : (
-            <Button onClick={() => setEditing(true)}>
-              Edit Profile
-            </Button>
-          )}
-        </div>
+        <Button onClick={() => router.push('/dashboard/settings')}>
+          Edit Profile
+        </Button>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        {/* Business Information */}
+        {/* Store Information */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Building2 className="h-5 w-5" />
-              Business Information
+              Store Information
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {editing ? (
-              <>
+            <div className="flex items-start gap-3">
+              <Building2 className="h-5 w-5 text-gray-400 mt-0.5" />
+              <div>
+                <p className="text-sm text-gray-500">Store Name</p>
+                <p className="font-medium">{profile.business_name || 'Not set'}</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <Package className="h-5 w-5 text-gray-400 mt-0.5" />
+              <div>
+                <p className="text-sm text-gray-500">Store Category</p>
+                <p className="font-medium">{(profile.store_category as any)?.name || 'Not set'}</p>
+              </div>
+            </div>
+            {profile.description && (
+              <div className="flex items-start gap-3">
+                <div className="w-5"></div>
                 <div>
-                  <Label>Business Name</Label>
-                  <Input
-                    value={editForm.business_name}
-                    onChange={(e) => setEditForm({ ...editForm, business_name: e.target.value })}
-                    placeholder="Your business name"
-                  />
+                  <p className="text-sm text-gray-500">Description</p>
+                  <p className="text-sm text-gray-700">{profile.description}</p>
                 </div>
-                <div>
-                  <Label>Business Email</Label>
-                  <Input
-                    type="email"
-                    value={editForm.business_email}
-                    onChange={(e) => setEditForm({ ...editForm, business_email: e.target.value })}
-                    placeholder="business@example.com"
-                  />
-                </div>
-                <div>
-                  <Label>Business Phone</Label>
-                  <Input
-                    value={editForm.business_phone}
-                    onChange={(e) => setEditForm({ ...editForm, business_phone: e.target.value })}
-                    placeholder="+234 XXX XXX XXXX"
-                  />
-                </div>
-                <div>
-                  <Label>Business Description</Label>
-                  <Textarea
-                    value={editForm.business_description}
-                    onChange={(e) => setEditForm({ ...editForm, business_description: e.target.value })}
-                    placeholder="Tell buyers about your business..."
-                    rows={4}
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex items-start gap-3">
-                  <Building2 className="h-5 w-5 text-gray-400 mt-0.5" />
-                  <div>
-                    <p className="text-sm text-gray-500">Business Name</p>
-                    <p className="font-medium">{profile.business_name || 'Not set'}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Mail className="h-5 w-5 text-gray-400 mt-0.5" />
-                  <div>
-                    <p className="text-sm text-gray-500">Business Email</p>
-                    <p className="font-medium">{profile.business_email || 'Not set'}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Phone className="h-5 w-5 text-gray-400 mt-0.5" />
-                  <div>
-                    <p className="text-sm text-gray-500">Business Phone</p>
-                    <p className="font-medium">{profile.business_phone || 'Not set'}</p>
-                  </div>
-                </div>
-                {profile.business_description && (
-                  <div className="flex items-start gap-3">
-                    <div className="w-5"></div>
-                    <div>
-                      <p className="text-sm text-gray-500">Description</p>
-                      <p className="text-sm text-gray-700">{profile.business_description}</p>
-                    </div>
-                  </div>
-                )}
-              </>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Personal Information */}
+        {/* Contact Information */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <User className="h-5 w-5" />
-              Personal Information
+              Contact Information
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -254,73 +146,56 @@ export default function ProfilePage() {
               <User className="h-5 w-5 text-gray-400 mt-0.5" />
               <div>
                 <p className="text-sm text-gray-500">Full Name</p>
-                <p className="font-medium">{(profile.profile as any)?.full_name || 'Not set'}</p>
+                <p className="font-medium">{profile.full_name || 'Not set'}</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <Mail className="h-5 w-5 text-gray-400 mt-0.5" />
               <div>
                 <p className="text-sm text-gray-500">Email</p>
-                <p className="font-medium">{(profile.profile as any)?.email || 'Not set'}</p>
+                <p className="font-medium">{profile.email || 'Not set'}</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <Phone className="h-5 w-5 text-gray-400 mt-0.5" />
               <div>
                 <p className="text-sm text-gray-500">Phone</p>
-                <p className="font-medium">{(profile.profile as any)?.phone_number || 'Not set'}</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <MapPin className="h-5 w-5 text-gray-400 mt-0.5" />
-              <div>
-                <p className="text-sm text-gray-500">Location</p>
-                <p className="font-medium">
-                  {(profile.university as any)?.name || 'Not set'}
-                  {(profile.university as any)?.state && `, ${(profile.university as any).state}`}
-                </p>
+                <p className="font-medium">{profile.phone_number || 'Not set'}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Bank Information */}
+        {/* Location */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
-              Bank Information
+              <MapPin className="h-5 w-5" />
+              Location
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-start gap-3">
-              <div className="w-5"></div>
+              <MapPin className="h-5 w-5 text-gray-400 mt-0.5" />
               <div>
-                <p className="text-sm text-gray-500">Bank Name</p>
-                <p className="font-medium">{profile.bank_name || 'Not set'}</p>
+                <p className="text-sm text-gray-500">State</p>
+                <p className="font-medium">{profile.state || 'Not set'}</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
-              <div className="w-5"></div>
+              <Building2 className="h-5 w-5 text-gray-400 mt-0.5" />
               <div>
-                <p className="text-sm text-gray-500">Account Number</p>
-                <p className="font-medium">{profile.account_number || 'Not set'}</p>
+                <p className="text-sm text-gray-500">University</p>
+                <p className="font-medium">{(profile.university as any)?.name || 'Not set'}</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
-              <div className="w-5"></div>
+              <MapPin className="h-5 w-5 text-gray-400 mt-0.5" />
               <div>
-                <p className="text-sm text-gray-500">Account Name</p>
-                <p className="font-medium">{profile.account_name || 'Not set'}</p>
+                <p className="text-sm text-gray-500">Store Address</p>
+                <p className="text-sm text-gray-700">{profile.pickup_address || 'Not set'}</p>
               </div>
             </div>
-            <Button 
-              variant="outline" 
-              className="w-full"
-              onClick={() => router.push('/dashboard/settings')}
-            >
-              Update Bank Details
-            </Button>
           </CardContent>
         </Card>
 

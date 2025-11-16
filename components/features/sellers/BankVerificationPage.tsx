@@ -1,6 +1,8 @@
 'use client';
-import { useState, useEffect, useActionState } from 'react'; // <-- Add useActionState here
-import { useFormStatus } from 'react-dom'; // <-- Only useFormStatus stays here
+
+import { useState, useEffect } from 'react';
+import { useActionState } from 'react'; // ← Changed from react-dom
+import { useFormStatus } from 'react-dom'; // ← This one stays in react-dom
 import { updateBankDetails } from '@/app/dashboard/products/new/actions';
 import { toast } from 'sonner';
 
@@ -23,14 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-// REMOVED: import { NIGERIAN_BANKS } from '@/lib/banks';
+import { NIGERIAN_BANKS } from '@/lib/banks';
 import { CheckCircle2, Edit2, Building2, CreditCard, User } from 'lucide-react';
-
-// --- NEW: Type for the bank list ---
-interface Bank {
-  name: string;
-  code: string;
-}
 
 // Define the type for the seller prop
 interface SellerData {
@@ -47,7 +43,7 @@ const initialState = {
   message: null,
 };
 
-// Submit button component (No change)
+// Submit button component
 function SubmitButton() {
   const { pending } = useFormStatus();
 
@@ -58,7 +54,7 @@ function SubmitButton() {
   );
 }
 
-// Bank Details Display Card (No change)
+// Bank Details Display Card
 function BankDetailsDisplay({ 
   seller, 
   onEdit 
@@ -139,23 +135,20 @@ function BankDetailsDisplay({
   );
 }
 
-// --- MODIFIED: Bank Details Form ---
+// Bank Details Form
 function BankDetailsEditForm({ 
   seller, 
-  onCancel,
-  bankList // <-- Accepts the new prop
+  onCancel 
 }: { 
   seller: SellerData; 
   onCancel: () => void;
-  bankList: Bank[]; // <-- Accepts the new prop
 }) {
   const [state, formAction] = useActionState(updateBankDetails, initialState);
 
   useEffect(() => {
     if (state.message) {
       toast.success(state.message);
-      // We no longer need to reload, the revalidation should handle it
-      onCancel(); // Go back to display mode
+      onCancel(); // Just close the edit mode, revalidatePath will refresh the data
     }
     if (state.error) {
       toast.error(state.error);
@@ -168,7 +161,7 @@ function BankDetailsEditForm({
         <CardHeader>
           <CardTitle>Update Bank Account</CardTitle>
           <CardDescription>
-            Your account will be instantly verified upon saving.
+            Your account will be instantly verified with Paystack. The account name must match your profile name.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -184,8 +177,7 @@ function BankDetailsEditForm({
                 <SelectValue placeholder="Select your bank" />
               </SelectTrigger>
               <SelectContent>
-                {/* --- THIS IS THE FIX --- */}
-                {bankList.map((bank) => (
+                {NIGERIAN_BANKS.map((bank) => (
                   <SelectItem key={bank.code} value={bank.code}>
                     {bank.name}
                   </SelectItem>
@@ -203,16 +195,15 @@ function BankDetailsEditForm({
               placeholder="10-digit account number"
               defaultValue={seller.bank_account_number || ''}
               maxLength={10}
-              minLength={10}
-              pattern="\d{10}" // Enforce 10 digits
+              pattern="\d{10}"
               required
             />
+            <p className="text-xs text-gray-500">
+              The account name will be automatically verified and must match your profile name.
+            </p>
           </div>
 
-          {/* --- REMOVED ACCOUNT NAME FIELD ---
-              We get this from Paystack automatically,
-              so the user doesn't need to type it.
-          */}
+          {/* REMOVED: Account Name field - Paystack provides this */}
           
         </CardContent>
         <CardFooter className="flex gap-3">
@@ -226,17 +217,12 @@ function BankDetailsEditForm({
   );
 }
 
-// --- MODIFIED: Main Component ---
-export function BankVerificationPage({ 
-  seller, 
-  bankList // <-- Accepts the new prop
-}: { 
-  seller: SellerData;
-  bankList: Bank[]; // <-- Accepts the new prop
-}) {
+// Main Component
+export function BankVerificationPage({ seller }: { seller: SellerData }) {
   const [isEditing, setIsEditing] = useState(false);
   const hasBankDetails = !!seller.bank_account_number;
 
+  // Show form by default if no bank details exist
   useEffect(() => {
     if (!hasBankDetails) {
       setIsEditing(true);
@@ -262,8 +248,7 @@ export function BankVerificationPage({
       ) : (
         <BankDetailsEditForm 
           seller={seller} 
-          onCancel={() => setIsEditing(false)}
-          bankList={bankList} // <-- Pass the prop down
+          onCancel={() => setIsEditing(false)} 
         />
       )}
     </div>

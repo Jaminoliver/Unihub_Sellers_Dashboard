@@ -33,18 +33,20 @@ const productSchema = z.object({
   description: z.string().min(20, 'Description must be at least 20 characters'),
   price: z.number().min(1, 'Price must be greater than 0'),
   stock: z.number().min(0, 'Stock cannot be negative'),
-  category: z.string().uuid('You must select a category'),
+  category: z.string().min(1, 'You must select a category'),
+  university_id: z.string().min(1, 'You must select a university'),
   condition: z.enum(['new', 'used'], {
     message: 'Please select product condition',
   }),
   sku: z.string().optional(),
   original_price: z.number().optional(),
   brand: z.string().optional(),
-  color: z.string().optional(),
+  colors: z.array(z.string()).optional(),
+  sizes: z.array(z.string()).optional(),
   images: z
     .any()
-    .refine((files: FileList) => files?.length >= 3, 'You must upload at least 3 images.')
-    .refine((files: FileList) => files?.length <= 8, 'You can upload a maximum of 8 images.'),
+    .refine((files: FileList) => files?.length >= 1, 'You must upload at least 1 image.')
+    .refine((files: FileList) => files?.length <= 5, 'You can upload a maximum of 5 images.'),
 }).refine(
   (data) => {
     if (data.original_price && data.original_price > 0) {
@@ -62,12 +64,18 @@ type ProductFormValues = z.infer<typeof productSchema>;
 
 interface AddProductFormProps {
   categories: { id: string; name: string }[];
+  universities: { id: string; name: string }[];
+  sellerState: string;
 }
 
-export function AddProductForm({ categories }: AddProductFormProps) {
+export function AddProductForm({ categories, universities, sellerState }: AddProductFormProps) {
   const [isSubmitting, startTransition] = useTransition();
   const [serverError, setServerError] = useState<string | null>(null);
   const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([]);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [sizeType, setSizeType] = useState<'clothing' | 'shoes' | 'none'>('none');
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [customColor, setCustomColor] = useState('');
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -77,11 +85,13 @@ export function AddProductForm({ categories }: AddProductFormProps) {
       price: 0,
       stock: 1,
       category: '',
+      university_id: '',
       condition: 'new',
       sku: '',
       original_price: 0,
       brand: '',
-      color: '',
+      colors: [],
+      sizes: [],
       images: undefined,
     },
   });
@@ -108,6 +118,9 @@ export function AddProductForm({ categories }: AddProductFormProps) {
 
   const onSubmit = async (data: ProductFormValues) => {
     setServerError(null);
+    
+    console.log('Form data before submit:', data);
+    console.log('University ID:', data.university_id);
 
     const formData = new FormData();
     formData.append('name', data.name);
@@ -115,6 +128,7 @@ export function AddProductForm({ categories }: AddProductFormProps) {
     formData.append('price', data.price.toString());
     formData.append('stock', data.stock.toString());
     formData.append('category', data.category);
+    formData.append('university_id', data.university_id);
     formData.append('condition', data.condition);
 
     if (data.original_price && data.original_price > 0) {
@@ -124,7 +138,12 @@ export function AddProductForm({ categories }: AddProductFormProps) {
 
     if (data.sku) formData.append('sku', data.sku);
     if (data.brand) formData.append('brand', data.brand);
-    if (data.color) formData.append('color', data.color);
+    if (data.colors && data.colors.length > 0) {
+      formData.append('colors', JSON.stringify(data.colors));
+    }
+    if (data.sizes && data.sizes.length > 0) {
+      formData.append('sizes', JSON.stringify(data.sizes));
+    }
 
     if (data.images) {
       for (let i = 0; i < data.images.length; i++) {
@@ -270,6 +289,41 @@ export function AddProductForm({ categories }: AddProductFormProps) {
                   </FormItem>
                 )}
               />
+
+              {/* University */}
+              <FormField
+                control={form.control}
+                name="university_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>University <span className="text-red-500">*</span></FormLabel>
+                    <Select 
+                      onValueChange={field.onChange}
+                      value={field.value || undefined}
+                      disabled={universities.length === 0}
+                    >
+                      <FormControl>
+                        <SelectTrigger className={!field.value ? 'border-red-300' : ''}>
+                          <SelectValue placeholder={
+                            universities.length === 0 ? 'No universities found' : 'Select university'
+                          } />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {universities.map((uni) => (
+                          <SelectItem key={uni.id} value={uni.id}>
+                            {uni.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {sellerState ? `Universities in ${sellerState}` : 'Update your state in Settings first'}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
             {/* Pricing Section */}
@@ -385,17 +439,180 @@ export function AddProductForm({ categories }: AddProductFormProps) {
                     </FormItem>
                   )}
                 />
+              </div>
 
-                {/* Color */}
+              {/* Colors */}
+              <div className="mt-6">
                 <FormField
                   control={form.control}
-                  name="color"
+                  name="colors"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Color (Optional)</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Black, Blue, Mixed" {...field} />
-                      </FormControl>
+                      <FormLabel>Colors (Optional)</FormLabel>
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap gap-2">
+                          {['Black', 'White', 'Red', 'Blue', 'Green', 'Yellow', 'Grey', 'Brown'].map((color) => (
+                            <Button
+                              key={color}
+                              type="button"
+                              variant={selectedColors.includes(color) ? 'default' : 'outline'}
+                              onClick={() => {
+                                const newColors = selectedColors.includes(color)
+                                  ? selectedColors.filter(c => c !== color)
+                                  : [...selectedColors, color];
+                                setSelectedColors(newColors);
+                                field.onChange(newColors);
+                              }}
+                              className="h-8 text-xs"
+                            >
+                              {color}
+                            </Button>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Custom color"
+                            value={customColor}
+                            onChange={(e) => setCustomColor(e.target.value)}
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter' && customColor.trim()) {
+                                e.preventDefault();
+                                const newColors = [...selectedColors, customColor.trim()];
+                                setSelectedColors(newColors);
+                                field.onChange(newColors);
+                                setCustomColor('');
+                              }
+                            }}
+                            className="flex-1"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              if (customColor.trim()) {
+                                const newColors = [...selectedColors, customColor.trim()];
+                                setSelectedColors(newColors);
+                                field.onChange(newColors);
+                                setCustomColor('');
+                              }
+                            }}
+                          >
+                            Add
+                          </Button>
+                        </div>
+                        {selectedColors.length > 0 && (
+                          <p className="text-sm text-gray-600">
+                            Selected: {selectedColors.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* Product Sizes */}
+              <div className="mt-6">
+                <FormField
+                  control={form.control}
+                  name="sizes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Product Sizes (Optional)</FormLabel>
+                      <div className="space-y-4">
+                        {/* Size Type Selector */}
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant={sizeType === 'none' ? 'default' : 'outline'}
+                            onClick={() => {
+                              setSizeType('none');
+                              setSelectedSizes([]);
+                              field.onChange([]);
+                            }}
+                            className="flex-1"
+                          >
+                            No Size
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={sizeType === 'clothing' ? 'default' : 'outline'}
+                            onClick={() => {
+                              setSizeType('clothing');
+                              setSelectedSizes([]);
+                              field.onChange([]);
+                            }}
+                            className="flex-1"
+                          >
+                            Clothing (XS-XXL)
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={sizeType === 'shoes' ? 'default' : 'outline'}
+                            onClick={() => {
+                              setSizeType('shoes');
+                              setSelectedSizes([]);
+                              field.onChange([]);
+                            }}
+                            className="flex-1"
+                          >
+                            Shoes (36-46)
+                          </Button>
+                        </div>
+
+                        {/* Clothing Sizes */}
+                        {sizeType === 'clothing' && (
+                          <div className="flex flex-wrap gap-2">
+                            {['XS', 'S', 'M', 'L', 'XL', 'XXL'].map((size) => (
+                              <Button
+                                key={size}
+                                type="button"
+                                variant={selectedSizes.includes(size) ? 'default' : 'outline'}
+                                onClick={() => {
+                                  const newSizes = selectedSizes.includes(size)
+                                    ? selectedSizes.filter(s => s !== size)
+                                    : [...selectedSizes, size];
+                                  setSelectedSizes(newSizes);
+                                  field.onChange(newSizes);
+                                }}
+                                className="w-16"
+                              >
+                                {size}
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Shoe Sizes */}
+                        {sizeType === 'shoes' && (
+                          <div className="flex flex-wrap gap-2">
+                            {['36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46'].map((size) => (
+                              <Button
+                                key={size}
+                                type="button"
+                                variant={selectedSizes.includes(size) ? 'default' : 'outline'}
+                                onClick={() => {
+                                  const newSizes = selectedSizes.includes(size)
+                                    ? selectedSizes.filter(s => s !== size)
+                                    : [...selectedSizes, size];
+                                  setSelectedSizes(newSizes);
+                                  field.onChange(newSizes);
+                                }}
+                                className="w-12"
+                              >
+                                {size}
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+
+                        {selectedSizes.length > 0 && (
+                          <p className="text-sm text-gray-600">
+                            Selected: {selectedSizes.join(', ')}
+                          </p>
+                        )}
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}

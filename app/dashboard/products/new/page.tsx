@@ -1,7 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { AddProductForm } from '@/components/features/products/AddProductForm';
+import { redirect } from 'next/navigation';
 
-// Helper function to get categories from Supabase
 async function getCategories(supabase: any) {
   const { data, error } = await supabase
     .from('categories')
@@ -16,13 +16,43 @@ async function getCategories(supabase: any) {
   return data || [];
 }
 
+async function getSellerState(supabase: any, userId: string) {
+  const { data } = await supabase
+    .from('sellers')
+    .select('state, university:universities(state)')
+    .eq('user_id', userId)
+    .single();
+  
+  return data?.state || data?.university?.state || '';
+}
+
+async function getUniversitiesByState(supabase: any, state: string) {
+  if (!state) return [];
+  
+  const { data } = await supabase
+    .from('universities')
+    .select('id, name')
+    .eq('state', state)
+    .eq('is_active', true)
+    .order('name');
+  
+  return data || [];
+}
+
 export default async function AddNewProductPage() {
   const supabase = await createServerSupabaseClient();
-  const categories = await getCategories(supabase);
+  
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+
+  const sellerState = await getSellerState(supabase, user.id);
+  const [categories, universities] = await Promise.all([
+    getCategories(supabase),
+    getUniversitiesByState(supabase, sellerState)
+  ]);
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Add New Product</h1>
         <p className="text-gray-500 mt-1">
@@ -30,8 +60,7 @@ export default async function AddNewProductPage() {
         </p>
       </div>
       
-      {/* Product Form */}
-      <AddProductForm categories={categories} />
+      <AddProductForm categories={categories} universities={universities} sellerState={sellerState} />
     </div>
   );
 }
