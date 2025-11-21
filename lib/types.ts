@@ -33,6 +33,8 @@ export interface Database {
           suspended_until: string | null
           suspension_reason: string | null
           is_suspended: boolean // Computed field: true if suspended_until > NOW()
+          // Approval field
+          approval_status: string
         }
         Insert: {
           id?: string
@@ -50,6 +52,8 @@ export interface Database {
           // Suspension fields (is_suspended is computed, don't insert)
           suspended_until?: string | null
           suspension_reason?: string | null
+          // Approval field
+          approval_status?: string
         }
         Update: {
           id?: string
@@ -67,6 +71,8 @@ export interface Database {
           // Suspension fields (is_suspended is computed, don't update directly)
           suspended_until?: string | null
           suspension_reason?: string | null
+          // Approval field
+          approval_status?: string
         }
       }
       sellers: {
@@ -130,7 +136,7 @@ export interface Database {
   }
 }
 
-// Enhanced Product type with computed suspension info
+// Enhanced Product type with computed suspension info and approval status
 export interface Product {
   id: string;
   name: string;
@@ -144,9 +150,14 @@ export interface Product {
   is_available: boolean;
   created_at: string;
   updated_at: string;
+  
+  // Suspension fields
   suspended_until: string | null;
   suspension_reason: string | null;
-  is_suspended: boolean; // Computed field from database
+  is_suspended: boolean; // Computed field from database or frontend logic
+  
+  // Approval field
+  approval_status: string; 
 }
 
 // Helper type for suspension status
@@ -195,12 +206,14 @@ export const SuspensionHelpers = {
 
   /**
    * Check if product should be available to buyers
+   * Now includes check for approval status
    */
   isAvailableToBuyers(product: Product): boolean {
     return (
       product.stock_quantity > 0 &&
       !product.is_suspended &&
-      product.is_available
+      product.is_available &&
+      product.approval_status === 'approved'
     );
   },
 };

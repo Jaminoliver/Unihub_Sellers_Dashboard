@@ -4,7 +4,6 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-// REMOVED: import { NIGERIAN_BANKS } from '@/lib/banks';
 
 // Define the schema for our form data using Zod
 const productSchema = z.object({
@@ -23,9 +22,7 @@ const productSchema = z.object({
   sizes: z.string().optional(),
 });
 
-// --- (FIXED) Zod schema for bank details ---
-// We only validate what the user provides.
-// 'account_name' is removed because we fetch it from Paystack.
+// Zod schema for bank details
 const bankDetailsSchema = z.object({
   bank_code: z.string().min(3, 'Bank code is required'),
   account_number: z
@@ -35,7 +32,7 @@ const bankDetailsSchema = z.object({
     .regex(/^\d+$/, 'Account number must only contain digits'),
 });
 
-// ADD PRODUCT ACTION (Original - Unchanged)
+// ✅ UPDATED ADD PRODUCT ACTION - Now creates product_approvals entry
 export async function addProduct(
   prevState: { error: string | null },
   formData: FormData
@@ -143,24 +140,30 @@ export async function addProduct(
   const sizesArray = sizes ? JSON.parse(sizes) : [];
   const colorsArray = colors ? JSON.parse(colors) : [];
   
-  const { error: insertError } = await supabase.from('products').insert({
-    name,
-    description,
-    price,
-    stock_quantity: stock,
-    category_id: category,
-    seller_id: seller.id,
-    university_id: university_id,
-    image_urls: imageUrls,
-    is_available: stock > 0,
-    condition: condition || 'new',
-    sku: sku || null,
-    original_price: original_price || null,
-    discount_percentage: discount_percentage || 0,
-    brand: brand || null,
-    color: colorsArray,
-    sizes: sizesArray,
-  });
+  // ✅ NEW: Insert with approval_status = 'pending'
+  const { data: newProduct, error: insertError } = await supabase
+    .from('products')
+    .insert({
+      name,
+      description,
+      price,
+      stock_quantity: stock,
+      category_id: category,
+      seller_id: seller.id,
+      university_id: university_id,
+      image_urls: imageUrls,
+      is_available: false, // ✅ Changed: Start as unavailable until approved
+      approval_status: 'pending', // ✅ NEW: Set approval status
+      condition: condition || 'new',
+      sku: sku || null,
+      original_price: original_price || null,
+      discount_percentage: discount_percentage || 0,
+      brand: brand || null,
+      colors: colorsArray,
+      sizes: sizesArray,
+    })
+    .select()
+    .single();
 
   if (insertError) {
     console.error('Database insert error:', insertError);
@@ -173,13 +176,38 @@ export async function addProduct(
     return { error: `Failed to save product: ${insertError.message}` };
   }
 
+  // ✅ NEW: Create product_approvals entry
+  if (newProduct) {
+    const { error: approvalError } = await supabase
+      .from('product_approvals')
+      .insert({
+        product_id: newProduct.id,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      });
+
+    if (approvalError) {
+      console.error('Failed to create approval entry:', approvalError);
+      // Don't fail the whole operation, just log it
+    }
+
+    // ✅ NEW: Notify seller that product is pending approval
+    await supabase.from('notifications').insert({
+      user_id: seller.id,
+      type: 'product_pending',
+      title: 'Product Submitted for Review',
+      message: `Your product "${name}" has been submitted and is awaiting admin approval.`,
+      is_read: false,
+    });
+  }
+
   revalidatePath('/dashboard/products');
   redirect('/dashboard/products');
 
   return { error: null };
 }
 
-// UPDATE PRODUCT ACTION (Original - Unchanged)
+// UPDATE PRODUCT ACTION
 export async function updateProduct(
   productId: string,
   prevState: { error: string | null },
@@ -331,7 +359,7 @@ export async function updateProduct(
       original_price: original_price || null,
       discount_percentage: discount_percentage || 0,
       brand: brand || null,
-      color: colorsArray,
+      colors: colorsArray,
       sizes: sizesArray,
       updated_at: new Date().toISOString(),
     })
@@ -348,14 +376,13 @@ export async function updateProduct(
   return { error: null };
 }
 
-// DELETE PRODUCT ACTION (Original - Unchanged)
+// DELETE PRODUCT ACTION
 export async function deleteProduct(productId: string) {
   console.log('=== DELETE PRODUCT STARTED ===');
   console.log('Product ID:', productId);
 
   const supabase = await createServerSupabaseClient();
 
-  // 1. Get the authenticated user
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -364,7 +391,6 @@ export async function deleteProduct(productId: string) {
     return { error: 'You must be logged in to delete a product.' };
   }
 
-  // 2. Get the seller ID
   const { data: seller, error: sellerError } = await supabase
     .from('sellers')
     .select('id')
@@ -375,7 +401,6 @@ export async function deleteProduct(productId: string) {
     return { error: 'Could not find seller profile.' };
   }
 
-  // 3. Get product to verify ownership and get image URLs
   const { data: product, error: fetchError } = await supabase
     .from('products')
     .select('seller_id, image_urls')
@@ -386,12 +411,10 @@ export async function deleteProduct(productId: string) {
     return { error: 'Product not found.' };
   }
 
-  // 4. Verify the product belongs to this seller
   if (product.seller_id !== seller.id) {
     return { error: 'You do not have permission to delete this product.' };
   }
 
-  // 5. Delete images from storage
   if (product.image_urls && Array.isArray(product.image_urls)) {
     for (const url of product.image_urls) {
       try {
@@ -406,7 +429,6 @@ export async function deleteProduct(productId: string) {
     }
   }
 
-  // 6. Delete the product from database
   const { error: deleteError } = await supabase
     .from('products')
     .delete()
@@ -418,22 +440,16 @@ export async function deleteProduct(productId: string) {
     };
   }
 
-  // 7. Revalidate the products page
   revalidatePath('/dashboard/products');
   return { error: null };
 }
 
-// --- BANK DETAILS SECTION ---
-
-// 1. Define a single, consistent state type for the form
+// BANK DETAILS SECTION
 type BankDetailsState = {
   error: string | null;
   message: string | null;
 };
 
-// 2. REMOVED: NIGERIAN_BANKS_MAP - No longer needed
-
-// --- (FIXED) UPDATE BANK DETAILS ACTION ---
 export async function updateBankDetails(
   prevState: BankDetailsState,
   formData: FormData
@@ -447,7 +463,6 @@ export async function updateBankDetails(
 
   const supabase = await createServerSupabaseClient();
 
-  // 1. Get the authenticated user
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -456,7 +471,6 @@ export async function updateBankDetails(
     return { error: 'You must be logged in.', message: null };
   }
 
-  // 2. Get the seller ID
   const { data: seller, error: sellerError } = await supabase
     .from('sellers')
     .select('id')
@@ -467,7 +481,6 @@ export async function updateBankDetails(
     return { error: 'Could not find seller profile.', message: null };
   }
 
-  // 3. Validate the form data (using new schema)
   const validatedFields = bankDetailsSchema.safeParse({
     bank_code: formData.get('bank_code'),
     account_number: formData.get('account_number'),
@@ -482,7 +495,6 @@ export async function updateBankDetails(
 
   const { bank_code, account_number } = validatedFields.data;
 
-  // 4. VERIFY WITH PAYSTACK
   let verifiedAccountName: string;
   let verifiedBankName: string;
 
@@ -505,8 +517,6 @@ export async function updateBankDetails(
       return { error: result.message || 'Invalid account details.', message: null };
     }
 
-    // --- SUCCESS ---
-    // Get the official, verified names from Paystack
     verifiedAccountName = result.data.account_name;
     verifiedBankName = result.data.bank_name;
 
@@ -515,10 +525,6 @@ export async function updateBankDetails(
     return { error: 'Could not connect to verification service.', message: null };
   }
 
-  // 5. REMOVED: Complex name matching logic
-
-  // 6. UPDATE DATABASE
-  // Use the verified details from Paystack
   console.log('Attempting to update seller:', seller.id);
   console.log('Bank details:', {
     bank_name: verifiedBankName,
@@ -553,14 +559,11 @@ export async function updateBankDetails(
     return { error: 'Failed to update seller record.', message: null };
   }
 
-  // 7. Revalidate the path and return success
   revalidatePath('/dashboard/account/verification');
   return { error: null, message: 'Bank account verified and saved!' };
 }
 
-// --- SUSPENSION ACTIONS ---
-
-// SUSPEND PRODUCT ACTION (Original - Unchanged)
+// SUSPENSION ACTIONS
 export async function suspendProduct(
   productId: string,
   days: number,
@@ -568,7 +571,6 @@ export async function suspendProduct(
 ) {
   const supabase = await createServerSupabaseClient();
 
-  // 1. Get authenticated user
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -577,7 +579,6 @@ export async function suspendProduct(
     return { error: 'You must be logged in to suspend a product.' };
   }
 
-  // 2. Get seller ID
   const { data: seller, error: sellerError } = await supabase
     .from('sellers')
     .select('id')
@@ -588,7 +589,6 @@ export async function suspendProduct(
     return { error: 'Could not find seller profile.' };
   }
 
-  // 3. Verify product ownership
   const { data: product, error: fetchError } = await supabase
     .from('products')
     .select('seller_id')
@@ -603,11 +603,9 @@ export async function suspendProduct(
     return { error: 'You do not have permission to suspend this product.' };
   }
 
-  // 4. Calculate suspension end date
   const suspendedUntil = new Date();
   suspendedUntil.setDate(suspendedUntil.getDate() + days);
 
-  // 5. Update product with suspension
   const { error: updateError } = await supabase
     .from('products')
     .update({
@@ -630,11 +628,9 @@ export async function suspendProduct(
   };
 }
 
-// UNSUSPEND PRODUCT ACTION (Original - Unchanged)
 export async function unsuspendProduct(productId: string) {
   const supabase = await createServerSupabaseClient();
 
-  // 1. Get authenticated user
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -643,7 +639,6 @@ export async function unsuspendProduct(productId: string) {
     return { error: 'You must be logged in to unsuspend a product.' };
   }
 
-  // 2. Get seller ID
   const { data: seller, error: sellerError } = await supabase
     .from('sellers')
     .select('id')
@@ -654,7 +649,6 @@ export async function unsuspendProduct(productId: string) {
     return { error: 'Could not find seller profile.' };
   }
 
-  // 3. Verify product ownership
   const { data: product, error: fetchError } = await supabase
     .from('products')
     .select('seller_id, stock_quantity')
@@ -669,7 +663,6 @@ export async function unsuspendProduct(productId: string) {
     return { error: 'You do not have permission to unsuspend this product.' };
   }
 
-  // 4. Remove suspension and restore availability (if in stock)
   const { error: updateError } = await supabase
     .from('products')
     .update({

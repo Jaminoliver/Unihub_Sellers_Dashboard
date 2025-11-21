@@ -2,7 +2,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { ProductTable } from '@/components/features/products/ProductTable';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { PlusCircle, Package, AlertTriangle, TrendingUp, ShoppingBag, Clock } from 'lucide-react';
+import { PlusCircle, Package, AlertTriangle, TrendingUp, ShoppingBag, Clock, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import type { Product } from '@/lib/types';
 
@@ -19,7 +19,8 @@ async function getProducts(supabase: any, sellerId: string): Promise<Product[]> 
       category_id,
       image_urls,
       suspended_until,
-      suspension_reason
+      suspension_reason,
+      approval_status
     `)
     .eq('seller_id', sellerId)
     .order('created_at', { ascending: false });
@@ -32,32 +33,56 @@ async function getProducts(supabase: any, sellerId: string): Promise<Product[]> 
   return data.map((item: any) => ({
     ...item,
     image_urls: item.image_urls ? (Array.isArray(item.image_urls) ? item.image_urls : []) : [],
-    // Add computed is_suspended field on the frontend
+    // Compute suspended status
     is_suspended: item.suspended_until ? new Date(item.suspended_until) > new Date() : false,
+    // Ensure approval_status exists, default to pending if null (based on schema default)
+    approval_status: item.approval_status || 'pending',
   }));
 }
 
-// Helper function to check if product is suspended
+// Helper to check suspension
 function isSuspended(suspendedUntil: string | null): boolean {
   if (!suspendedUntil) return false;
   return new Date(suspendedUntil) > new Date();
 }
 
-// Helper function to get product statistics
-function getProductStats(products: Product[]) {
+// Helper to get product statistics
+function getProductStats(products: any[]) {
   const totalProducts = products.length;
+  
+  // Active = Available AND In Stock AND Approved AND Not Suspended
   const activeProducts = products.filter((p) => 
-    p.is_available && !isSuspended(p.suspended_until) && p.stock_quantity > 0
+    p.is_available && 
+    p.stock_quantity > 0 && 
+    !isSuspended(p.suspended_until) && 
+    p.approval_status === 'approved'
   ).length;
+
   const lowStockProducts = products.filter((p) => 
-    p.stock_quantity < 10 && p.stock_quantity > 0 && !isSuspended(p.suspended_until)
+    p.stock_quantity < 10 && 
+    p.stock_quantity > 0 && 
+    !isSuspended(p.suspended_until) &&
+    p.approval_status === 'approved'
   ).length;
+
   const outOfStockProducts = products.filter((p) => 
-    p.stock_quantity === 0
+    p.stock_quantity === 0 && 
+    p.approval_status === 'approved'
   ).length;
+
   const suspendedProducts = products.filter((p) => 
     isSuspended(p.suspended_until)
   ).length;
+  
+  const pendingProducts = products.filter((p) => 
+    p.approval_status === 'pending'
+  ).length;
+
+  // Assuming status is 'rejected' or 'disapproved' in DB
+  const disapprovedProducts = products.filter((p) => 
+    p.approval_status === 'rejected' || p.approval_status === 'disapproved'
+  ).length;
+
   const totalValue = products.reduce((sum, p) => sum + p.price, 0);
 
   return {
@@ -66,6 +91,8 @@ function getProductStats(products: Product[]) {
     lowStockProducts,
     outOfStockProducts,
     suspendedProducts,
+    pendingProducts,
+    disapprovedProducts,
     totalValue,
   };
 }
@@ -73,10 +100,7 @@ function getProductStats(products: Product[]) {
 export default async function ProductsPage() {
   const supabase = await createServerSupabaseClient();
 
-  // 1. Get the authenticated user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
     return (
@@ -91,7 +115,6 @@ export default async function ProductsPage() {
     );
   }
 
-  // 2. Get the seller ID from the 'sellers' table
   const { data: seller, error: sellerError } = await supabase
     .from('sellers')
     .select('id')
@@ -99,25 +122,19 @@ export default async function ProductsPage() {
     .single();
 
   if (sellerError || !seller) {
-    console.error('Error finding seller profile:', sellerError);
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle>Seller Profile Not Found</CardTitle>
-            <CardDescription>
-              Could not find your seller profile. Please contact support.
-            </CardDescription>
+            <CardDescription>Could not find your seller profile.</CardDescription>
           </CardHeader>
         </Card>
       </div>
     );
   }
 
-  // 3. Get the products for this seller
   const products = await getProducts(supabase, seller.id);
-
-  // 4. Calculate stats using the helper function
   const stats = getProductStats(products);
 
   return (
@@ -142,7 +159,6 @@ export default async function ProductsPage() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Total Products Card */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Products</CardTitle>
@@ -156,49 +172,19 @@ export default async function ProductsPage() {
           </CardContent>
         </Card>
 
-        {/* Inventory Value Card */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Inventory Value</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Pending Approval</CardTitle>
+            <Clock className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₦{stats.totalValue.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-blue-600">{stats.pendingProducts}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              Total products value
+              Awaiting review
             </p>
           </CardContent>
         </Card>
 
-        {/* Suspended Products Card */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Suspended</CardTitle>
-            <Clock className="h-4 w-4 text-orange-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{stats.suspendedProducts}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Temporarily hidden
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Low Stock Card */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-yellow-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{stats.lowStockProducts}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Below 10 units
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Out of Stock Card */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Out of Stock</CardTitle>
@@ -213,19 +199,19 @@ export default async function ProductsPage() {
         </Card>
       </div>
 
-      {/* Suspended Products Alert */}
-      {stats.suspendedProducts > 0 && (
-        <Card className="border-l-4 border-orange-500 bg-orange-50 dark:bg-orange-950">
+      {/* Pending Alert */}
+      {stats.pendingProducts > 0 && (
+        <Card className="border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-950">
           <CardContent className="pt-6">
             <div className="flex items-start gap-3">
-              <Clock className="h-5 w-5 text-orange-600 dark:text-orange-500 flex-shrink-0 mt-0.5" />
+              <Clock className="h-5 w-5 text-blue-600 dark:text-blue-500 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h3 className="font-semibold text-orange-900 dark:text-orange-100">
-                  Suspended Products
+                <h3 className="font-semibold text-blue-900 dark:text-blue-100">
+                  Products Pending Approval
                 </h3>
-                <p className="text-sm text-orange-800 dark:text-orange-200 mt-1">
-                  {stats.suspendedProducts} product{stats.suspendedProducts !== 1 ? 's are' : ' is'} currently suspended and hidden from buyers. 
-                  They will automatically become available when the suspension period ends.
+                <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
+                  {stats.pendingProducts} product{stats.pendingProducts !== 1 ? 's are' : ' is'} currently under review. 
+                  They will be visible to buyers once approved.
                 </p>
               </div>
             </div>
@@ -233,63 +219,22 @@ export default async function ProductsPage() {
         </Card>
       )}
 
-      {/* Low Stock Alert */}
-      {stats.lowStockProducts > 0 && (
-        <Card className="border-l-4 border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
-          <CardContent className="pt-6">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h3 className="font-semibold text-yellow-900 dark:text-yellow-100">
-                  Low Stock Warning
-                </h3>
-                <p className="text-sm text-yellow-800 dark:text-yellow-200 mt-1">
-                  {stats.lowStockProducts} product{stats.lowStockProducts !== 1 ? 's are' : ' is'} running low on stock. 
-                  Consider restocking soon to avoid lost sales.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Out of Stock Alert */}
-      {stats.outOfStockProducts > 0 && (
+      {/* Disapproved Alert */}
+      {stats.disapprovedProducts > 0 && (
         <Card className="border-l-4 border-red-500 bg-red-50 dark:bg-red-950">
           <CardContent className="pt-6">
             <div className="flex items-start gap-3">
-              <ShoppingBag className="h-5 w-5 text-red-600 dark:text-red-500 flex-shrink-0 mt-0.5" />
+              <XCircle className="h-5 w-5 text-red-600 dark:text-red-500 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
                 <h3 className="font-semibold text-red-900 dark:text-red-100">
-                  Out of Stock Alert
+                  Action Required
                 </h3>
                 <p className="text-sm text-red-800 dark:text-red-200 mt-1">
-                  {stats.outOfStockProducts} product{stats.outOfStockProducts !== 1 ? 's are' : ' is'} completely out of stock. 
-                  These products are not visible to buyers.
+                  {stats.disapprovedProducts} product{stats.disapprovedProducts !== 1 ? 's were' : ' was'} disapproved. 
+                  Check your notifications for details.
                 </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Empty State */}
-      {stats.totalProducts === 0 && (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Package className="h-16 w-16 text-gray-300 dark:text-gray-600 mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-              No products yet
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-6 max-w-sm">
-              Get started by adding your first product to start selling on UniHub.
-            </p>
-            <Button asChild>
-              <Link href="/dashboard/products/new">
-                <PlusCircle className="mr-2 h-5 w-5" />
-                Add Your First Product
-              </Link>
-            </Button>
           </CardContent>
         </Card>
       )}

@@ -30,6 +30,7 @@ interface AnalyticsData {
   totalStats: {
     totalRevenue: number
     totalOrders: number
+    totalSoldItems: number
     avgOrderValue: number
     topSellingProduct: string
   }
@@ -45,6 +46,7 @@ export default function AnalyticsPage() {
     totalStats: {
       totalRevenue: 0,
       totalOrders: 0,
+      totalSoldItems: 0,
       avgOrderValue: 0,
       topSellingProduct: 'N/A',
     },
@@ -114,9 +116,12 @@ export default function AnalyticsPage() {
         return
       }
 
-      // Process revenue by date
+      // ✅ FILTER: Only count delivered orders for revenue calculations
+      const deliveredOrders = orders.filter(o => o.order_status === 'delivered')
+
+      // Process revenue by date (only delivered orders)
       const revenueByDate: { [key: string]: number } = {}
-      orders.forEach(order => {
+      deliveredOrders.forEach(order => {
         const date = format(new Date(order.created_at), 'MMM dd')
         const amount = parseFloat(order.total_amount || '0')
         revenueByDate[date] = (revenueByDate[date] || 0) + amount
@@ -127,7 +132,7 @@ export default function AnalyticsPage() {
         revenue: Math.round(revenue),
       }))
 
-      // Process top products
+      // ✅ FIXED: Process top products based on DELIVERED orders only
       const productSales: { 
         [key: string]: { 
           name: string
@@ -137,7 +142,7 @@ export default function AnalyticsPage() {
         } 
       } = {}
 
-      orders.forEach((order: any) => {
+      deliveredOrders.forEach((order: any) => {
         if (order.product) {
           const productId = order.product.id
           const productName = order.product.name
@@ -162,7 +167,7 @@ export default function AnalyticsPage() {
         .sort((a, b) => b.sales - a.sales)
         .slice(0, 5)
 
-      // Process order status distribution
+      // Process order status distribution (ALL orders for status breakdown)
       const statusCount: { [key: string]: number } = {}
       orders.forEach(order => {
         const status = order.order_status || 'unknown'
@@ -174,15 +179,18 @@ export default function AnalyticsPage() {
         count,
       }))
 
-      // Calculate total stats
-      const completedOrders = orders.filter(o => 
-        ['delivered', 'completed'].includes(o.order_status)
-      )
-      const totalRevenue = completedOrders.reduce((sum, order) => 
+      // ✅ FIXED: Calculate stats based on DELIVERED orders only
+      const totalRevenue = deliveredOrders.reduce((sum, order) => 
         sum + parseFloat(order.total_amount || '0'), 0
       )
-      const avgOrderValue = completedOrders.length > 0 
-        ? totalRevenue / completedOrders.length 
+      
+      // ✅ NEW: Calculate total sold items (sum of quantities from delivered orders)
+      const totalSoldItems = deliveredOrders.reduce((sum, order) => 
+        sum + (order.quantity || 0), 0
+      )
+
+      const avgOrderValue = deliveredOrders.length > 0 
+        ? totalRevenue / deliveredOrders.length 
         : 0
 
       setData({
@@ -191,7 +199,8 @@ export default function AnalyticsPage() {
         orderStatusData,
         totalStats: {
           totalRevenue,
-          totalOrders: orders.length,
+          totalOrders: orders.length, // All orders count
+          totalSoldItems, // ✅ NEW: Only delivered items
           avgOrderValue,
           topSellingProduct: topProducts[0]?.name || 'N/A',
         },
@@ -244,6 +253,7 @@ export default function AnalyticsPage() {
             <div className="text-2xl font-bold">
               ₦{data.totalStats.totalRevenue.toLocaleString()}
             </div>
+            <p className="text-xs text-gray-500 mt-1">From delivered orders</p>
           </CardContent>
         </Card>
 
@@ -256,6 +266,21 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{data.totalStats.totalOrders}</div>
+            <p className="text-xs text-gray-500 mt-1">All statuses</p>
+          </CardContent>
+        </Card>
+
+        {/* ✅ NEW: Total Items Sold Card */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-gray-600">
+              Items Sold
+            </CardTitle>
+            <Package className="h-5 w-5 text-gray-400" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{data.totalStats.totalSoldItems}</div>
+            <p className="text-xs text-gray-500 mt-1">Delivered items only</p>
           </CardContent>
         </Card>
 
@@ -270,20 +295,7 @@ export default function AnalyticsPage() {
             <div className="text-2xl font-bold">
               ₦{Math.round(data.totalStats.avgOrderValue).toLocaleString()}
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">
-              Top Product
-            </CardTitle>
-            <Package className="h-5 w-5 text-gray-400" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-sm font-bold truncate">
-              {data.totalStats.topSellingProduct}
-            </div>
+            <p className="text-xs text-gray-500 mt-1">Per delivered order</p>
           </CardContent>
         </Card>
       </div>
@@ -292,6 +304,7 @@ export default function AnalyticsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Revenue Trend</CardTitle>
+          <p className="text-sm text-gray-500">Only includes delivered orders</p>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
@@ -320,12 +333,13 @@ export default function AnalyticsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Top 5 Products</CardTitle>
+            <p className="text-sm text-gray-500">Based on delivered orders</p>
           </CardHeader>
           <CardContent>
             {data.topProducts.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Package className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                <p className="text-sm">No sales data yet</p>
+                <p className="text-sm">No delivered sales yet</p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -363,6 +377,7 @@ export default function AnalyticsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Order Status Breakdown</CardTitle>
+            <p className="text-sm text-gray-500">All orders by status</p>
           </CardHeader>
           <CardContent>
             {data.orderStatusData.length === 0 ? (

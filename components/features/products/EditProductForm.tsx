@@ -161,15 +161,20 @@ export function EditProductForm({ product, categories, sellerState }: EditProduc
 
   const totalImages = existingImages.length + newImages.length;
 
-  // ✅ Custom submit handler to validate university
   const handleSubmit = (formData: FormData) => {
-    if (!selectedUniversity) {
-      toast.error('Please select a university');
-      return;
-    }
-    formAction(formData);
-  };
-
+  if (!selectedUniversity) {
+    toast.error('Please select a university');
+    return;
+  }
+  
+  // 👇 ADD THESE DEBUG LINES
+  console.log('Selected Colors:', selectedColors);
+  console.log('FormData colors:', formData.get('colors'));
+  console.log('Selected Sizes:', selectedSizes);
+  console.log('FormData sizes:', formData.get('sizes'));
+  
+  formAction(formData);
+};
   return (
     <form action={handleSubmit} className="space-y-6">
       {/* Keep track of whether we're keeping old images */}

@@ -30,7 +30,7 @@ import Image from 'next/image';
 
 import type { Product } from '@/lib/types';
 import { ProductTableActions } from './ProductTableActions';
-import { Clock } from 'lucide-react';
+import { Clock, XCircle, AlertCircle } from 'lucide-react';
 
 // Helper function to get days until unsuspension
 function getDaysUntilUnsuspension(suspendedUntil: string): number {
@@ -58,6 +58,7 @@ export const columns: ColumnDef<Product>[] = [
         checked={row.getIsSelected()}
         onCheckedChange={(value) => row.toggleSelected(!!value)}
         aria-label="Select row"
+        disabled={row.original.approval_status === 'rejected' || row.original.approval_status === 'disapproved'} 
       />
     ),
     enableSorting: false,
@@ -90,16 +91,36 @@ export const columns: ColumnDef<Product>[] = [
     },
   },
 
-  // Status column (with suspension badge using computed field)
+  // Status column (Approval Status > Suspended > Stock)
   {
     accessorKey: 'is_available',
     header: 'Status',
     cell: ({ row }) => {
+      const status = row.original.approval_status;
       const isAvailable = row.getValue('is_available');
-      const isSuspended = row.original.is_suspended; // Use computed field from database
+      const isSuspended = row.original.is_suspended; // Use computed field
       const suspendedUntil = row.original.suspended_until;
       
-      // Priority: Suspended > Out of Stock > In Stock
+      // 1. Check Approval Status First
+      if (status === 'pending') {
+        return (
+          <Badge variant="secondary" className="bg-blue-100 text-blue-800 hover:bg-blue-100">
+            <Clock className="h-3 w-3 mr-1" />
+            Pending Approval
+          </Badge>
+        );
+      }
+
+      if (status === 'rejected' || status === 'disapproved') {
+        return (
+          <Badge variant="destructive" className="bg-red-100 text-red-800 hover:bg-red-100 border-red-200">
+            <XCircle className="h-3 w-3 mr-1" />
+            Disapproved
+          </Badge>
+        );
+      }
+
+      // 2. Check Suspension (Only if approved)
       if (isSuspended && suspendedUntil) {
         const daysLeft = getDaysUntilUnsuspension(suspendedUntil);
         return (
@@ -108,7 +129,7 @@ export const columns: ColumnDef<Product>[] = [
               variant="secondary"
               className="bg-orange-100 text-orange-800 w-fit"
             >
-              <Clock className="h-3 w-3 mr-1" />
+              <AlertCircle className="h-3 w-3 mr-1" />
               Suspended
             </Badge>
             <span className="text-xs text-muted-foreground">
@@ -118,13 +139,14 @@ export const columns: ColumnDef<Product>[] = [
         );
       }
 
+      // 3. Check Stock Availability (Only if approved and not suspended)
       return (
         <Badge
           variant={isAvailable ? 'default' : 'destructive'}
           className={
             isAvailable
-              ? 'bg-green-100 text-green-800'
-              : 'bg-red-100 text-red-800'
+              ? 'bg-green-100 text-green-800 hover:bg-green-100'
+              : 'bg-red-100 text-red-800 hover:bg-red-100'
           }
         >
           {isAvailable ? 'In Stock' : 'Out of Stock'}
@@ -154,6 +176,11 @@ export const columns: ColumnDef<Product>[] = [
     header: 'Stock',
     cell: ({ row }) => {
       const stock = row.getValue('stock_quantity') as number;
+      // If disapproved or pending, stock doesn't matter visually as much
+      if (row.original.approval_status !== 'approved') {
+        return <span className="text-muted-foreground text-sm">-</span>;
+      }
+      
       return (
         <div className={stock < 10 ? 'text-red-600 font-medium' : ''}>
           {stock}
@@ -172,15 +199,26 @@ export const columns: ColumnDef<Product>[] = [
     },
   },
 
-  // Actions column (Edit, Delete, Suspend)
+  // Actions column
   {
     id: 'actions',
     cell: ({ row }) => {
+      const status = row.original.approval_status;
+
+      // If disapproved, make it dormant (no actions available)
+      if (status === 'rejected' || status === 'disapproved') {
+        return (
+           <span className="text-xs text-muted-foreground italic">
+             Dormant
+           </span>
+        );
+      }
+
       return (
         <ProductTableActions
           productId={row.original.id}
           productName={row.original.name}
-          isSuspended={row.original.is_suspended} // Use computed field
+          isSuspended={row.original.is_suspended}
         />
       );
     },
@@ -257,22 +295,32 @@ export function ProductTable({ data }: ProductTableProps) {
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && 'selected'}
-                  className={row.original.is_suspended ? 'bg-orange-50' : ''}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              table.getRowModel().rows.map((row) => {
+                // Check status for row styling
+                const status = row.original.approval_status;
+                const isDisapproved = status === 'rejected' || status === 'disapproved';
+                const isSuspended = row.original.is_suspended;
+
+                return (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && 'selected'}
+                    className={`
+                      ${isSuspended ? 'bg-orange-50' : ''}
+                      ${isDisapproved ? 'bg-gray-50 opacity-60' : ''}
+                    `}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                );
+              })
             ) : (
               <TableRow>
                 <TableCell

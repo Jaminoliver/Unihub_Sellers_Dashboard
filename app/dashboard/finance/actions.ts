@@ -49,6 +49,20 @@ export async function requestWithdrawal(
       return { error: `Insufficient balance. Available: ₦${walletBalance.toLocaleString()}` };
     }
 
+    // IMMEDIATELY DEDUCT FROM WALLET BALANCE
+    const { error: updateError } = await supabase
+      .from('sellers')
+      .update({ 
+        wallet_balance: (walletBalance - amount).toString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', seller.id);
+
+    if (updateError) {
+      console.error('Balance update error:', updateError);
+      return { error: 'Failed to update wallet balance' };
+    }
+
     // Create withdrawal request
     const { error: insertError } = await supabase
       .from('withdrawal_requests')
@@ -64,11 +78,20 @@ export async function requestWithdrawal(
 
     if (insertError) {
       console.error('Insert error:', insertError);
+      // ROLLBACK: Add money back if withdrawal creation fails
+      await supabase
+        .from('sellers')
+        .update({ 
+          wallet_balance: walletBalance.toString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', seller.id);
       return { error: 'Failed to create withdrawal request' };
     }
 
     revalidatePath('/dashboard/finance');
-    return { message: `Withdrawal request for ₦${amount.toLocaleString()} submitted successfully!` };
+    revalidatePath('/dashboard/finance/withdraw');
+    return { message: `Withdrawal request for ₦${amount.toLocaleString()} submitted successfully! Your balance has been updated.` };
 
   } catch (error) {
     console.error('Withdrawal error:', error);
@@ -87,7 +110,7 @@ export async function cancelWithdrawal(withdrawalId: string): Promise<Withdrawal
 
     const { data: seller } = await supabase
       .from('sellers')
-      .select('id')
+      .select('id, wallet_balance')
       .eq('user_id', user.id)
       .single();
 
@@ -95,19 +118,56 @@ export async function cancelWithdrawal(withdrawalId: string): Promise<Withdrawal
       return { error: 'Seller not found' };
     }
 
+    // Get withdrawal details before cancelling
+    const { data: withdrawal } = await supabase
+      .from('withdrawal_requests')
+      .select('amount, status')
+      .eq('id', withdrawalId)
+      .eq('seller_id', seller.id)
+      .eq('status', 'pending')
+      .single();
+
+    if (!withdrawal) {
+      return { error: 'Withdrawal not found or already processed' };
+    }
+
+    // ADD MONEY BACK TO WALLET
+    const currentBalance = parseFloat(seller.wallet_balance || '0');
+    const refundAmount = parseFloat(withdrawal.amount);
+    
+    const { error: updateError } = await supabase
+      .from('sellers')
+      .update({ 
+        wallet_balance: (currentBalance + refundAmount).toString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', seller.id);
+
+    if (updateError) {
+      console.error('Balance refund error:', updateError);
+      return { error: 'Failed to refund balance' };
+    }
+
+    // Cancel withdrawal
     const { error } = await supabase
       .from('withdrawal_requests')
       .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-      .eq('id', withdrawalId)
-      .eq('seller_id', seller.id)
-      .eq('status', 'pending');
+      .eq('id', withdrawalId);
 
     if (error) {
+      // ROLLBACK: Remove money if cancellation fails
+      await supabase
+        .from('sellers')
+        .update({ 
+          wallet_balance: currentBalance.toString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', seller.id);
       return { error: 'Failed to cancel withdrawal' };
     }
 
     revalidatePath('/dashboard/finance');
-    return { message: 'Withdrawal cancelled successfully' };
+    return { message: `Withdrawal cancelled. ₦${refundAmount.toLocaleString()} has been returned to your wallet.` };
 
   } catch (error) {
     console.error('Cancel withdrawal error:', error);
