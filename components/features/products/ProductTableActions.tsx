@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { MoreHorizontal, Edit, Trash2, Pause, Play } from 'lucide-react';
+import { MoreHorizontal, Edit, Trash2, Pause, Play, MessageCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
@@ -28,17 +28,28 @@ import {
 import { deleteProduct } from '@/app/dashboard/products/new/actions';
 import { unsuspendProduct } from '@/app/dashboard/products/new/actions';
 import { SuspendProductDialog } from './SuspendProductDialog';
+import { AppealDialog } from './AppealDialog';
 
 interface ProductTableActionsProps {
   productId: string;
   productName: string;
   isSuspended: boolean;
+  isAdminSuspended: boolean;
+  isBanned: boolean;
+  isDisapprovedOrAdminSuspended: boolean;
+  banReason?: string | null;
+  approvalStatus: string;
 }
 
 export function ProductTableActions({
   productId,
   productName,
   isSuspended,
+  isAdminSuspended,
+  isBanned,
+  isDisapprovedOrAdminSuspended,
+  banReason,
+  approvalStatus,
 }: ProductTableActionsProps) {
   const router = useRouter();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -78,6 +89,135 @@ export function ProductTableActions({
     setIsUnsuspending(false);
   };
 
+  // BANNED PRODUCTS: Only show delete button
+  if (isBanned) {
+    return (
+      <>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+          onClick={() => setShowDeleteDialog(true)}
+        >
+          <Trash2 className="h-4 w-4 mr-2" />
+          Delete
+        </Button>
+
+        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Banned Product?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete "{productName}" from your inventory.
+                {banReason && (
+                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
+                    <span className="text-sm font-semibold text-red-900 block">Ban Reason:</span>
+                    <span className="text-sm text-red-800 mt-1 block">{banReason}</span>
+                  </div>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
+    );
+  }
+
+  // PENDING APPROVAL: Only show delete button
+  if (approvalStatus === 'pending') {
+    return (
+      <>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+          onClick={() => setShowDeleteDialog(true)}
+        >
+          <Trash2 className="h-4 w-4 mr-2" />
+          Delete
+        </Button>
+
+        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Pending Product?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This product is currently pending approval. Deleting it will remove it from the review queue.
+                This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
+    );
+  }
+
+  // DISAPPROVED PRODUCTS: Only show delete button
+  if (isDisapprovedOrAdminSuspended && !isAdminSuspended) {
+    return (
+      <>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+          onClick={() => setShowDeleteDialog(true)}
+        >
+          <Trash2 className="h-4 w-4 mr-2" />
+          Delete
+        </Button>
+
+        <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Disapproved Product?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete "{productName}" from your inventory.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
+    );
+  }
+
+  // ADMIN SUSPENDED: Only show appeal button
+  if (isAdminSuspended) {
+    return (
+      <AppealDialog productId={productId} productName={productName} />
+    );
+  }
+
+  // APPROVED PRODUCTS (In Stock/Out of Stock/Seller Suspended): Full menu
   return (
     <>
       <DropdownMenu>

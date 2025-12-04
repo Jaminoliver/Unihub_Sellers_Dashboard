@@ -30,7 +30,7 @@ import Image from 'next/image';
 
 import type { Product } from '@/lib/types';
 import { ProductTableActions } from './ProductTableActions';
-import { Clock, XCircle, AlertCircle } from 'lucide-react';
+import { Clock, XCircle, AlertCircle, Shield, Ban } from 'lucide-react';
 
 // Helper function to get days until unsuspension
 function getDaysUntilUnsuspension(suspendedUntil: string): number {
@@ -58,7 +58,7 @@ export const columns: ColumnDef<Product>[] = [
         checked={row.getIsSelected()}
         onCheckedChange={(value) => row.toggleSelected(!!value)}
         aria-label="Select row"
-        disabled={row.original.approval_status === 'rejected' || row.original.approval_status === 'disapproved'} 
+        disabled={row.original.approval_status === 'rejected' || row.original.approval_status === 'disapproved' || row.original.is_admin_suspended || row.original.is_banned} 
       />
     ),
     enableSorting: false,
@@ -70,7 +70,6 @@ export const columns: ColumnDef<Product>[] = [
     accessorKey: 'name',
     header: 'Product',
     cell: ({ row }) => {
-      // Get the first image URL, or a placeholder
       const imageUrl =
         row.original.image_urls && row.original.image_urls.length > 0
           ? row.original.image_urls[0]
@@ -85,23 +84,53 @@ export const columns: ColumnDef<Product>[] = [
             height={40}
             className="rounded-md object-cover w-10 h-10"
           />
-          <span className="font-medium">{row.original.name}</span>
+          <div className="flex flex-col">
+            <span className="font-medium">{row.original.name}</span>
+            {/* Show reasons below product name */}
+            {row.original.is_banned && row.original.ban_reason && (
+              <span className="text-xs text-red-600 mt-1">
+                <span className="font-semibold">Ban reason:</span> {row.original.ban_reason}
+              </span>
+            )}
+            {row.original.admin_suspended && row.original.admin_suspension_reason && !row.original.is_banned && (
+              <span className="text-xs text-purple-600 mt-1">
+                <span className="font-semibold">Suspension reason:</span> {row.original.admin_suspension_reason}
+              </span>
+            )}
+            {(row.original.approval_status === 'rejected' || row.original.approval_status === 'disapproved') && row.original.rejection_reason && (
+              <span className="text-xs text-red-600 mt-1">
+                <span className="font-semibold">Rejection reason:</span> {row.original.rejection_reason}
+              </span>
+            )}
+          </div>
         </div>
       );
     },
   },
 
-  // Status column (Approval Status > Suspended > Stock)
+  // Status column
   {
     accessorKey: 'is_available',
     header: 'Status',
     cell: ({ row }) => {
       const status = row.original.approval_status;
       const isAvailable = row.getValue('is_available');
-      const isSuspended = row.original.is_suspended; // Use computed field
+      const isSuspended = row.original.is_suspended;
       const suspendedUntil = row.original.suspended_until;
+      const isAdminSuspended = row.original.is_admin_suspended;
+      const isBanned = row.original.is_banned;
       
-      // 1. Check Approval Status First
+      // 1. Check if Banned (highest priority)
+      if (isBanned) {
+        return (
+          <Badge variant="destructive" className="bg-red-100 text-red-800 hover:bg-red-100 border-red-300">
+            <Ban className="h-3 w-3 mr-1" />
+            Banned
+          </Badge>
+        );
+      }
+
+      // 2. Check Approval Status
       if (status === 'pending') {
         return (
           <Badge variant="secondary" className="bg-blue-100 text-blue-800 hover:bg-blue-100">
@@ -120,7 +149,17 @@ export const columns: ColumnDef<Product>[] = [
         );
       }
 
-      // 2. Check Suspension (Only if approved)
+      // 3. Check Admin Suspension
+      if (isAdminSuspended) {
+        return (
+          <Badge variant="secondary" className="bg-purple-100 text-purple-800 hover:bg-purple-100">
+            <Shield className="h-3 w-3 mr-1" />
+            Admin Suspended
+          </Badge>
+        );
+      }
+
+      // 4. Check Seller Suspension
       if (isSuspended && suspendedUntil) {
         const daysLeft = getDaysUntilUnsuspension(suspendedUntil);
         return (
@@ -139,7 +178,7 @@ export const columns: ColumnDef<Product>[] = [
         );
       }
 
-      // 3. Check Stock Availability (Only if approved and not suspended)
+      // 5. Check Stock Availability
       return (
         <Badge
           variant={isAvailable ? 'default' : 'destructive'}
@@ -176,8 +215,7 @@ export const columns: ColumnDef<Product>[] = [
     header: 'Stock',
     cell: ({ row }) => {
       const stock = row.getValue('stock_quantity') as number;
-      // If disapproved or pending, stock doesn't matter visually as much
-      if (row.original.approval_status !== 'approved') {
+      if (row.original.approval_status !== 'approved' || row.original.is_admin_suspended || row.original.is_banned) {
         return <span className="text-muted-foreground text-sm">-</span>;
       }
       
@@ -204,21 +242,20 @@ export const columns: ColumnDef<Product>[] = [
     id: 'actions',
     cell: ({ row }) => {
       const status = row.original.approval_status;
-
-      // If disapproved, make it dormant (no actions available)
-      if (status === 'rejected' || status === 'disapproved') {
-        return (
-           <span className="text-xs text-muted-foreground italic">
-             Dormant
-           </span>
-        );
-      }
+      const isDisapproved = status === 'rejected' || status === 'disapproved';
+      const isAdminSuspended = row.original.is_admin_suspended;
+      const isBanned = row.original.is_banned;
 
       return (
         <ProductTableActions
           productId={row.original.id}
           productName={row.original.name}
           isSuspended={row.original.is_suspended}
+          isAdminSuspended={isAdminSuspended}
+          isBanned={isBanned}
+          isDisapprovedOrAdminSuspended={isDisapproved}
+          banReason={row.original.ban_reason}
+          approvalStatus={status}
         />
       );
     },
@@ -231,9 +268,7 @@ interface ProductTableProps {
 
 export function ProductTable({ data }: ProductTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    []
-  );
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = React.useState({});
 
   const table = useReactTable({
@@ -255,7 +290,6 @@ export function ProductTable({ data }: ProductTableProps) {
 
   return (
     <div className="bg-white border rounded-lg shadow-sm">
-      {/* Filtering and Bulk Actions */}
       <div className="flex items-center justify-between p-4 border-b">
         <Input
           placeholder="Filter by product name..."
@@ -272,7 +306,6 @@ export function ProductTable({ data }: ProductTableProps) {
         )}
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -296,18 +329,21 @@ export function ProductTable({ data }: ProductTableProps) {
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => {
-                // Check status for row styling
                 const status = row.original.approval_status;
                 const isDisapproved = status === 'rejected' || status === 'disapproved';
                 const isSuspended = row.original.is_suspended;
+                const isAdminSuspended = row.original.is_admin_suspended;
+                const isBanned = row.original.is_banned;
 
                 return (
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && 'selected'}
                     className={`
-                      ${isSuspended ? 'bg-orange-50' : ''}
-                      ${isDisapproved ? 'bg-gray-50 opacity-60' : ''}
+                      ${isBanned ? 'bg-red-50' : ''}
+                      ${isAdminSuspended && !isBanned ? 'bg-purple-50' : ''}
+                      ${isSuspended && !isAdminSuspended && !isBanned ? 'bg-orange-50' : ''}
+                      ${isDisapproved && !isBanned ? 'bg-gray-50 opacity-60' : ''}
                     `}
                   >
                     {row.getVisibleCells().map((cell) => (
@@ -335,7 +371,6 @@ export function ProductTable({ data }: ProductTableProps) {
         </Table>
       </div>
 
-      {/* Pagination */}
       <div className="flex items-center justify-end space-x-2 p-4">
         <div className="flex-1 text-sm text-muted-foreground">
           {table.getFilteredSelectedRowModel().rows.length} of{' '}

@@ -64,19 +64,23 @@ export default async function FinancePage() {
   // Available balance comes directly from database (most reliable)
   const availableBalance = parseFloat(seller.wallet_balance || '0');
   
-  // Total completed withdrawals
+  // Total completed withdrawals (money that has LEFT the system)
   const totalWithdrawals = (withdrawals || [])
     .filter(w => w.status === 'completed')
     .reduce((sum, w) => sum + parseFloat(w.amount), 0);
   
-  // Pending withdrawals
+  // Pending withdrawals (money locked but not yet sent to bank)
   const pendingWithdrawals = (withdrawals || [])
     .filter(w => w.status === 'pending')
     .reduce((sum, w) => sum + parseFloat(w.amount), 0);
   
-  // Calculate total earnings: Available Balance + Total Withdrawals
-  // This gives us lifetime earnings
-  const totalEarnings = availableBalance + totalWithdrawals;
+  // FIX: Calculate total earnings correctly
+  // Total Earnings = Available Balance + Completed Withdrawals + Pending Withdrawals
+  // This represents ALL money that has ever entered the wallet
+  // - Available: Money still in wallet
+  // - Completed: Money already sent to bank
+  // - Pending: Money locked for withdrawal (still technically in the system)
+  const totalEarnings = availableBalance + totalWithdrawals + pendingWithdrawals;
 
   return (
     <div className="space-y-6">

@@ -29,10 +29,19 @@ export interface Database {
           is_available: boolean
           created_at: string
           updated_at: string
-          // Suspension fields
+          // Seller suspension fields
           suspended_until: string | null
           suspension_reason: string | null
-          is_suspended: boolean // Computed field: true if suspended_until > NOW()
+          is_suspended: boolean
+          // Admin suspension fields
+          admin_suspended: boolean
+          admin_suspended_at: string | null
+          admin_suspension_reason: string | null
+          // Ban fields
+          is_banned: boolean
+          ban_reason: string | null
+          banned_at: string | null
+          banned_by: string | null
           // Approval field
           approval_status: string
         }
@@ -49,10 +58,15 @@ export interface Database {
           is_available?: boolean
           created_at?: string
           updated_at?: string
-          // Suspension fields (is_suspended is computed, don't insert)
           suspended_until?: string | null
           suspension_reason?: string | null
-          // Approval field
+          admin_suspended?: boolean
+          admin_suspended_at?: string | null
+          admin_suspension_reason?: string | null
+          is_banned?: boolean
+          ban_reason?: string | null
+          banned_at?: string | null
+          banned_by?: string | null
           approval_status?: string
         }
         Update: {
@@ -68,10 +82,15 @@ export interface Database {
           is_available?: boolean
           created_at?: string
           updated_at?: string
-          // Suspension fields (is_suspended is computed, don't update directly)
           suspended_until?: string | null
           suspension_reason?: string | null
-          // Approval field
+          admin_suspended?: boolean
+          admin_suspended_at?: string | null
+          admin_suspension_reason?: string | null
+          is_banned?: boolean
+          ban_reason?: string | null
+          banned_at?: string | null
+          banned_by?: string | null
           approval_status?: string
         }
       }
@@ -151,13 +170,26 @@ export interface Product {
   created_at: string;
   updated_at: string;
   
-  // Suspension fields
+  // Seller suspension fields
   suspended_until: string | null;
   suspension_reason: string | null;
-  is_suspended: boolean; // Computed field from database or frontend logic
+  is_suspended: boolean;
+  
+  // Admin suspension fields
+  admin_suspended: boolean;
+  admin_suspended_at: string | null;
+  admin_suspension_reason: string | null;
+  is_admin_suspended: boolean;
+  
+  // Ban fields
+  is_banned: boolean;
+  ban_reason: string | null;
+  banned_at: string | null;
+  banned_by: string | null;
   
   // Approval field
-  approval_status: string; 
+  approval_status: 'pending' | 'approved' | 'rejected' | 'disapproved';
+  rejection_reason?: string | null;
 }
 
 // Helper type for suspension status
@@ -165,14 +197,11 @@ export interface SuspensionInfo {
   is_suspended: boolean;
   suspended_until: string | null;
   suspension_reason: string | null;
-  days_remaining?: number; // Calculated on frontend
+  days_remaining?: number;
 }
 
 // Helper functions for working with suspension
 export const SuspensionHelpers = {
-  /**
-   * Calculate days remaining until suspension ends
-   */
   getDaysRemaining(suspendedUntil: string | null): number {
     if (!suspendedUntil) return 0;
     const now = new Date();
@@ -182,17 +211,11 @@ export const SuspensionHelpers = {
     return Math.max(0, diffDays);
   },
 
-  /**
-   * Check if product is currently suspended (client-side check)
-   */
   isSuspended(suspendedUntil: string | null): boolean {
     if (!suspendedUntil) return false;
     return new Date(suspendedUntil) > new Date();
   },
 
-  /**
-   * Get suspension end date formatted for display
-   */
   getUnsuspendDate(suspendedUntil: string | null): string {
     if (!suspendedUntil) return '';
     return new Date(suspendedUntil).toLocaleDateString('en-US', {
@@ -204,14 +227,12 @@ export const SuspensionHelpers = {
     });
   },
 
-  /**
-   * Check if product should be available to buyers
-   * Now includes check for approval status
-   */
   isAvailableToBuyers(product: Product): boolean {
     return (
       product.stock_quantity > 0 &&
       !product.is_suspended &&
+      !product.is_admin_suspended &&
+      !product.is_banned &&
       product.is_available &&
       product.approval_status === 'approved'
     );
