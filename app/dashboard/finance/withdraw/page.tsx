@@ -10,7 +10,8 @@ export default async function WithdrawPage() {
 
   const { data: seller } = await supabase
     .from('sellers')
-    .select('id, wallet_balance, bank_name, account_name, bank_account_number, bank_verified')
+    // 1. FETCH THE CORRECT COLUMN (available_balance)
+    .select('id, available_balance, bank_name, account_name, bank_account_number, bank_verified')
     .eq('user_id', user.id)
     .single();
 
@@ -20,6 +21,11 @@ export default async function WithdrawPage() {
     redirect('/dashboard/account/verification');
   }
 
+  // 2. FORCE ROUNDING (Fixes the .9999 issue)
+  // This takes the raw number, multiplies by 100, rounds it, then divides back.
+  // Example: 49999.999 -> 50000
+  const cleanBalance = Math.round(parseFloat(seller.available_balance?.toString() || '0') * 100) / 100;
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
@@ -28,7 +34,7 @@ export default async function WithdrawPage() {
       </div>
 
       <WithdrawalForm 
-        walletBalance={parseFloat(seller.wallet_balance || '0')}
+        walletBalance={cleanBalance} // Pass the clean, rounded number
         bankName={seller.bank_name || ''}
         accountNumber={seller.bank_account_number || ''}
         accountName={seller.account_name || ''}

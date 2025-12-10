@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { X } from 'lucide-react';
+import { X, AlertCircle } from 'lucide-react';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 
@@ -51,10 +51,18 @@ interface University {
 interface EditProductFormProps {
   product: Product;
   categories: Category[];
-  sellerState: string; // State name from seller's university
+  sellerState: string;
+  isResubmit?: boolean;
+  rejectionReason?: string | null;
 }
 
-export function EditProductForm({ product, categories, sellerState }: EditProductFormProps) {
+export function EditProductForm({ 
+  product, 
+  categories, 
+  sellerState,
+  isResubmit = false,
+  rejectionReason = null
+}: EditProductFormProps) {
   const [state, formAction] = useActionState(
     updateProduct.bind(null, product.id),
     { error: null }
@@ -162,21 +170,37 @@ export function EditProductForm({ product, categories, sellerState }: EditProduc
   const totalImages = existingImages.length + newImages.length;
 
   const handleSubmit = (formData: FormData) => {
-  if (!selectedUniversity) {
-    toast.error('Please select a university');
-    return;
-  }
-  
-  // 👇 ADD THESE DEBUG LINES
-  console.log('Selected Colors:', selectedColors);
-  console.log('FormData colors:', formData.get('colors'));
-  console.log('Selected Sizes:', selectedSizes);
-  console.log('FormData sizes:', formData.get('sizes'));
-  
-  formAction(formData);
-};
+    if (!selectedUniversity) {
+      toast.error('Please select a university');
+      return;
+    }
+    
+    // Add resubmit flag if this is a resubmission
+    if (isResubmit) {
+      formData.append('resubmit', 'true');
+    }
+    
+    formAction(formData);
+  };
+
   return (
     <form action={handleSubmit} className="space-y-6">
+      {/* Resubmit Banner */}
+      {isResubmit && (
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-blue-900">Resubmitting for Approval</h3>
+              <p className="text-sm text-blue-800 mt-1">
+                After updating this product, it will be sent back to the admin for review. 
+                Make sure to address all issues mentioned in the rejection reason.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Keep track of whether we're keeping old images */}
       <input
         type="hidden"
@@ -593,7 +617,7 @@ export function EditProductForm({ product, categories, sellerState }: EditProduc
           className="flex-1"
           disabled={!selectedUniversity || loadingUniversities}
         >
-          Update Product
+          {isResubmit ? 'Fix & Resubmit for Approval' : 'Update Product'}
         </Button>
         <Button
           type="button"

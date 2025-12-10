@@ -2,103 +2,107 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { WalletCard } from '@/components/features/finance/WalletCard';
 import { FinanceTabs } from '@/components/features/finance/FinanceTabs';
+import { EscrowSummaryCard } from '@/components/features/finance/EscrowSummaryCard';
 
 export default async function FinancePage() {
   const supabase = await createServerSupabaseClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    redirect('/login');
+  }
 
-  // Get seller data
+  // 1. Fetch Seller Data
   const { data: seller } = await supabase
     .from('sellers')
-    .select('id, wallet_balance, bank_verified')
+    .select('id, available_balance, pending_balance, bank_verified, total_earnings')
     .eq('user_id', user.id)
     .single();
 
-  if (!seller) redirect('/dashboard');
+  if (!seller) {
+    return <div>Seller profile not found. Please contact support.</div>;
+  }
 
-  // Get wallet transactions (money IN from orders) - for display only
+  // 2. Fetch Withdrawal History
+  const { data: withdrawals } = await supabase
+    .from('withdrawal_requests')
+    .select('*')
+    .eq('seller_id', seller.id)
+    .order('created_at', { ascending: false });
+
+  // 3. Fetch Wallet Transactions
   const { data: walletTransactions } = await supabase
     .from('wallet_transactions')
     .select('*')
     .eq('seller_id', seller.id)
-    .eq('transaction_type', 'credit')
     .order('created_at', { ascending: false });
 
-  // Get all withdrawals (money OUT)
-  const { data: withdrawals } = await supabase
-    .from('withdrawal_requests')
-    .select('id, amount, status, created_at, processed_at, bank_name, account_number, failure_reason')
-    .eq('seller_id', seller.id)
-    .order('created_at', { ascending: false });
+  // 4. ✅ Fetch Escrow Summary (just totals, no full details)
+  const { data: escrowSummary } = await supabase
+    .from('escrow')
+    .select('amount')
+    .eq('seller_id', user.id)
+    .eq('status', 'holding');
 
-  // Combine wallet transactions and withdrawals into unified transaction history
-  const combinedTransactions = [
-    // Add wallet credits (money IN)
-    ...(walletTransactions || []).map(transaction => ({
-      id: `credit-${transaction.id}`,
-      type: 'earning' as const,
-      amount: parseFloat(transaction.amount),
-      status: 'completed',
-      date: transaction.created_at,
-      description: transaction.description || 'Payment received',
-      created_at: transaction.created_at,
-      balance_after: transaction.balance_after,
-      reference: transaction.reference,
-    })),
-    // Add withdrawals (money OUT)
-    ...(withdrawals || []).map(withdrawal => ({
-      id: `withdrawal-${withdrawal.id}`,
-      type: 'withdrawal' as const,
-      amount: parseFloat(withdrawal.amount),
-      status: withdrawal.status,
-      date: withdrawal.created_at,
-      description: 'Withdrawal to bank account',
-      processedAt: withdrawal.processed_at,
-      created_at: withdrawal.created_at,
-    })),
-  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const escrowTotal = (escrowSummary || []).reduce((sum, e) => sum + Number(e.amount), 0);
+  const escrowCount = (escrowSummary || []).length;
 
-  // Calculate statistics - SOURCE OF TRUTH approach
-  // Available balance comes directly from database (most reliable)
-  const availableBalance = parseFloat(seller.wallet_balance || '0');
-  
-  // Total completed withdrawals (money that has LEFT the system)
+  // 5. Transform Ledger Data for UI
+  const formattedTransactions = (walletTransactions || []).map((txn) => {
+    const isRefund = txn.transaction_type === 'debit' && 
+                     txn.description?.toLowerCase().includes('refund');
+    
+    let type: 'earning' | 'withdrawal' | 'refund';
+    if (isRefund) {
+      type = 'refund';
+    } else if (txn.transaction_type === 'credit') {
+      type = 'earning';
+    } else {
+      type = 'withdrawal';
+    }
+    
+    return {
+      id: txn.id,
+      type: type,
+      amount: parseFloat(txn.amount.toString()),
+      status: txn.status || 'completed',
+      date: txn.created_at,
+      description: txn.description || (txn.transaction_type === 'credit' ? 'Earnings' : 'Debit'),
+      created_at: txn.created_at,
+      processedAt: txn.clears_at || txn.updated_at || undefined,
+    };
+  });
+
+  // 6. Calculate Stats
   const totalWithdrawals = (withdrawals || [])
-    .filter(w => w.status === 'completed')
-    .reduce((sum, w) => sum + parseFloat(w.amount), 0);
-  
-  // Pending withdrawals (money locked but not yet sent to bank)
+    .filter(w => ['approved', 'processing', 'completed'].includes(w.status))
+    .reduce((sum, w) => sum + parseFloat(w.amount.toString()), 0);
+
   const pendingWithdrawals = (withdrawals || [])
     .filter(w => w.status === 'pending')
-    .reduce((sum, w) => sum + parseFloat(w.amount), 0);
-  
-  // FIX: Calculate total earnings correctly
-  // Total Earnings = Available Balance + Completed Withdrawals + Pending Withdrawals
-  // This represents ALL money that has ever entered the wallet
-  // - Available: Money still in wallet
-  // - Completed: Money already sent to bank
-  // - Pending: Money locked for withdrawal (still technically in the system)
-  const totalEarnings = availableBalance + totalWithdrawals + pendingWithdrawals;
+    .reduce((sum, w) => sum + parseFloat(w.amount.toString()), 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-8 pt-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Finance</h1>
         <p className="text-gray-500 mt-1">Manage your wallet and withdrawals</p>
       </div>
 
       <WalletCard 
-        balance={availableBalance}
-        bankVerified={seller.bank_verified}
-        totalEarnings={totalEarnings}
+        availableBalance={seller.available_balance ?? 0}
+        pendingBalance={seller.pending_balance ?? 0}
+        bankVerified={seller.bank_verified ?? false}
+        totalEarnings={seller.total_earnings ?? 0} 
         totalWithdrawals={totalWithdrawals}
         pendingWithdrawals={pendingWithdrawals}
       />
 
+      {/* ✅ NEW: Escrow Summary Card (click to view details) */}
+      <EscrowSummaryCard totalAmount={escrowTotal} orderCount={escrowCount} />
+
       <FinanceTabs 
-        transactions={combinedTransactions}
+        transactions={formattedTransactions as any[]}
         withdrawals={withdrawals || []}
       />
     </div>

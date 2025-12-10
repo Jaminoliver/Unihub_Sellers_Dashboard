@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Package, Clock, CheckCircle, XCircle, Eye, Truck, DollarSign, Calendar, MapPin, User, Phone, Hash, X, Mail } from 'lucide-react'
+import { Package, Clock, CheckCircle, XCircle, Eye, Truck, DollarSign, Calendar, MapPin, User, Phone, Hash, X, Mail, Shield } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 interface Order {
@@ -22,6 +22,11 @@ interface Order {
   buyer: { full_name: string; email: string; phone_number: string }
   product: { name: string; image_urls: string[] }
   delivery_address: { address_line: string; city: string; state: string; landmark: string; phone_number: string }
+  escrow?: { // ✅ NEW: Add escrow data
+    status: string
+    hold_until: string
+    amount: number
+  }
 }
 
 const STATUS_CONFIG = {
@@ -61,15 +66,24 @@ export default function OrdersPage() {
         .from('sellers').select('id').eq('user_id', user.id).single()
       if (sellerError || !sellerData) return setError('Seller account not found')
 
+      // ✅ UPDATED: Include escrow data in query
       const { data, error: ordersError } = await supabase.from('orders').select(`
           *,
           buyer:profiles!orders_buyer_id_fkey(full_name, email, phone_number),
           product:products(name, image_urls),
-          delivery_address:delivery_address_id(address_line, city, state, landmark, phone_number)
+          delivery_address:delivery_address_id(address_line, city, state, landmark, phone_number),
+          escrow:escrow!escrow_order_id_fkey(status, hold_until, amount)
         `).eq('seller_id', sellerData.id).order('created_at', { ascending: false })
 
       if (ordersError) return setError(ordersError.message)
-      setOrders(data || [])
+      
+      // Transform escrow data (it comes as array, take first item)
+      const transformedData = (data || []).map(order => ({
+        ...order,
+        escrow: Array.isArray(order.escrow) && order.escrow.length > 0 ? order.escrow[0] : null
+      }))
+      
+      setOrders(transformedData)
     } catch (error: any) {
       setError(error.message || 'Unexpected error')
     } finally {
@@ -108,13 +122,37 @@ export default function OrdersPage() {
     return <Badge className={`${cfg?.color} border px-2 py-0.5 text-xs font-medium`}>{cfg?.label}</Badge>
   }
 
+  // ✅ NEW: Escrow Badge Component
+  const EscrowBadge = ({ escrow }: { escrow: Order['escrow'] }) => {
+    if (!escrow) return null
+    
+    if (escrow.status === 'holding') {
+      return (
+        <Badge className="bg-orange-100 text-orange-800 border-orange-300 flex items-center gap-1.5">
+          <Shield className="h-3 w-3" />
+          In Escrow
+        </Badge>
+      )
+    }
+    
+    if (escrow.status === 'released') {
+      return (
+        <Badge className="bg-green-100 text-green-800 border-green-300 flex items-center gap-1.5">
+          <CheckCircle className="h-3 w-3" />
+          Released
+        </Badge>
+      )
+    }
+    
+    return null
+  }
+
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
   })
   const formatCurrency = (amt: number) => `₦${amt.toLocaleString()}`
   const filterOrders = (status: string) => status === 'all' ? orders : orders.filter(o => o.order_status === status)
 
-  // FIXED: Only count delivered orders for revenue
   const stats = {
     total: orders.length,
     pending: orders.filter(o => o.order_status === 'pending').length,
@@ -231,7 +269,11 @@ export default function OrdersPage() {
                                       <Hash className="h-3 w-3" />{order.order_number}
                                     </p>
                                   </div>
-                                  <StatusBadge status={order.order_status} />
+                                  <div className="flex flex-col gap-2 items-end">
+                                    <StatusBadge status={order.order_status} />
+                                    {/* ✅ NEW: Show escrow badge */}
+                                    <EscrowBadge escrow={order.escrow} />
+                                  </div>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4 text-sm mb-4">
@@ -293,7 +335,7 @@ export default function OrdersPage() {
         </Card>
       </div>
 
-      {/* Order Details Modal */}
+      {/* Order Details Modal - keeping existing code */}
       {selectedOrder && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <Card className="max-w-3xl w-full max-h-[90vh] overflow-y-auto">
@@ -311,7 +353,10 @@ export default function OrdersPage() {
                   <p className="text-sm text-gray-500">Order Number</p>
                   <p className="text-lg font-semibold">{selectedOrder.order_number}</p>
                 </div>
-                <StatusBadge status={selectedOrder.order_status} />
+                <div className="flex flex-col gap-2 items-end">
+                  <StatusBadge status={selectedOrder.order_status} />
+                  <EscrowBadge escrow={selectedOrder.escrow} />
+                </div>
               </div>
 
               <div>

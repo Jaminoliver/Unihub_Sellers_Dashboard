@@ -75,6 +75,8 @@ export const columns: ColumnDef<Product>[] = [
           ? row.original.image_urls[0]
           : 'https://placehold.co/60x60/f97316/white?text=Img';
 
+      const isRejected = row.original.approval_status === 'rejected' || row.original.approval_status === 'disapproved';
+
       return (
         <div className="flex items-center gap-3">
           <Image
@@ -84,23 +86,31 @@ export const columns: ColumnDef<Product>[] = [
             height={40}
             className="rounded-md object-cover w-10 h-10"
           />
-          <div className="flex flex-col">
+          <div className="flex flex-col max-w-md">
             <span className="font-medium">{row.original.name}</span>
-            {/* Show reasons below product name */}
+            
+            {/* Ban reason */}
             {row.original.is_banned && row.original.ban_reason && (
-              <span className="text-xs text-red-600 mt-1">
-                <span className="font-semibold">Ban reason:</span> {row.original.ban_reason}
-              </span>
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs">
+                <span className="font-semibold text-red-900">Ban reason:</span>
+                <p className="text-red-700 mt-0.5">{row.original.ban_reason}</p>
+              </div>
             )}
+
+            {/* Admin suspension reason */}
             {row.original.admin_suspended && row.original.admin_suspension_reason && !row.original.is_banned && (
-              <span className="text-xs text-purple-600 mt-1">
-                <span className="font-semibold">Suspension reason:</span> {row.original.admin_suspension_reason}
-              </span>
+              <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded text-xs">
+                <span className="font-semibold text-purple-900">Suspension reason:</span>
+                <p className="text-purple-700 mt-0.5">{row.original.admin_suspension_reason}</p>
+              </div>
             )}
-            {(row.original.approval_status === 'rejected' || row.original.approval_status === 'disapproved') && row.original.rejection_reason && (
-              <span className="text-xs text-red-600 mt-1">
-                <span className="font-semibold">Rejection reason:</span> {row.original.rejection_reason}
-              </span>
+
+            {/* Rejection reason */}
+            {isRejected && row.original.rejection_reason && (
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs">
+                <span className="font-semibold text-red-900">Rejection reason:</span>
+                <p className="text-red-700 mt-0.5">{row.original.rejection_reason}</p>
+              </div>
             )}
           </div>
         </div>
@@ -245,6 +255,7 @@ export const columns: ColumnDef<Product>[] = [
       const isDisapproved = status === 'rejected' || status === 'disapproved';
       const isAdminSuspended = row.original.is_admin_suspended;
       const isBanned = row.original.is_banned;
+      const rejectionReason = row.original.rejection_reason;
 
       return (
         <ProductTableActions
@@ -253,7 +264,8 @@ export const columns: ColumnDef<Product>[] = [
           isSuspended={row.original.is_suspended}
           isAdminSuspended={isAdminSuspended}
           isBanned={isBanned}
-          isDisapprovedOrAdminSuspended={isDisapproved}
+          isDisapproved={isDisapproved}
+          rejectionReason={rejectionReason}
           banReason={row.original.ban_reason}
           approvalStatus={status}
         />

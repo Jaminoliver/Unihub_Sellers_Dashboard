@@ -1,0 +1,460 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { X, Send, Clock, AlertCircle, MessageSquare, Paperclip, Image as ImageIcon, FileText, Loader2 } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import imageCompression from 'browser-image-compression';
+
+interface Dispute {
+  id: string;
+  order_id: string;
+  dispute_reason: string;
+  description: string;
+  status: string;
+  priority: string;
+  resolution: string | null;
+  created_at: string;
+  order: {
+    order_number: string;
+    total_amount: number;
+    product: {
+      name: string;
+      image_urls?: string[];
+    };
+    buyer: {
+      full_name: string;
+      email: string;
+    };
+  };
+}
+
+interface DisputeMessage {
+  id: string;
+  sender_type: 'buyer' | 'seller' | 'admin';
+  message: string;
+  attachments: string[] | null;
+  created_at: string;
+  sender?: {
+    full_name: string;
+  };
+}
+
+interface OrderDisputeDetailsModalProps {
+  dispute: Dispute;
+  onClose: () => void;
+}
+
+export function OrderDisputeDetailsModal({ dispute, onClose }: OrderDisputeDetailsModalProps) {
+  const [messages, setMessages] = useState<DisputeMessage[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const supabase = createClient();
+
+  useEffect(() => {
+    loadMessages();
+  }, [dispute.id]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const loadMessages = async () => {
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('dispute_messages')
+        .select(`
+          *,
+          sender:profiles!dispute_messages_sender_id_fkey(full_name)
+        `)
+        .eq('dispute_id', dispute.id)
+        .in('sender_type', ['seller', 'admin'])
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setMessages(data || []);
+    } catch (error) {
+      console.error('Error loading messages:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const compressImage = async (file: File): Promise<File> => {
+    const options = {
+      maxSizeMB: 5,
+      maxWidthOrHeight: 1920,
+      useWebWorker: true,
+    };
+    
+    try {
+      const compressedFile = await imageCompression(file, options);
+      return compressedFile;
+    } catch (error) {
+      console.error('Error compressing image:', error);
+      return file;
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    
+    if (files.length + selectedFiles.length > 5) {
+      alert('Maximum 5 files allowed');
+      return;
+    }
+
+    const validFiles = files.filter(file => {
+      const isImage = file.type.startsWith('image/');
+      const isPDF = file.type === 'application/pdf';
+      const isValid = isImage || isPDF;
+      
+      if (!isValid) {
+        alert(`${file.name}: Only images (JPG, PNG, WebP) and PDFs are allowed`);
+      }
+      
+      return isValid;
+    });
+
+    setSelectedFiles(prev => [...prev, ...validFiles]);
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const uploadFiles = async (): Promise<string[]> => {
+    const uploadedUrls: string[] = [];
+    
+    for (const file of selectedFiles) {
+      try {
+        let fileToUpload = file;
+        
+        if (file.type.startsWith('image/')) {
+          fileToUpload = await compressImage(file);
+        }
+        
+        const fileName = `order-disputes/${dispute.id}/${Date.now()}-${file.name}`;
+        
+        const { data, error } = await supabase.storage
+          .from('dispute-evidence')
+          .upload(fileName, fileToUpload);
+
+        if (error) throw error;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('dispute-evidence')
+          .getPublicUrl(fileName);
+
+        uploadedUrls.push(publicUrl);
+      } catch (error) {
+        console.error('Error uploading file:', error);
+        throw error;
+      }
+    }
+    
+    return uploadedUrls;
+  };
+
+  const handleSendMessage = async () => {
+    if ((!newMessage.trim() && selectedFiles.length === 0) || isSending) return;
+
+    setIsSending(true);
+    setUploadingFiles(true);
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      let attachmentUrls: string[] = [];
+      
+      if (selectedFiles.length > 0) {
+        attachmentUrls = await uploadFiles();
+      }
+
+      const { error } = await supabase
+        .from('dispute_messages')
+        .insert({
+          dispute_id: dispute.id,
+          sender_id: user.id,
+          sender_type: 'seller',
+          message: newMessage.trim() || '📎 Attachment',
+          attachments: attachmentUrls.length > 0 ? attachmentUrls : null,
+        });
+
+      if (error) throw error;
+
+      setNewMessage('');
+      setSelectedFiles([]);
+      await loadMessages();
+    } catch (error: any) {
+      alert(`Failed to send message: ${error.message}`);
+    } finally {
+      setIsSending(false);
+      setUploadingFiles(false);
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+
+    if (hours < 24) {
+      return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } else {
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+  };
+
+  const getFileName = (url: string) => {
+    return url.split('/').pop() || 'file';
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <Card className="max-w-5xl w-full h-[90vh] flex flex-col">
+        <CardHeader className="border-b bg-gradient-to-r from-blue-600 to-blue-500 text-white flex-shrink-0 py-1.5 px-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              <div>
+                <CardTitle className="text-sm font-semibold leading-tight">Order Dispute</CardTitle>
+                <p className="text-xs text-white/80 leading-tight">#{dispute.order.order_number}</p>
+              </div>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-white hover:bg-white/20 h-7 w-7 p-0 rounded-full"
+              onClick={onClose}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </CardHeader>
+
+        <div className="bg-red-50 border-b border-red-200 px-3 py-1 flex-shrink-0">
+          <div className="flex items-center gap-1.5 text-xs">
+            <AlertCircle className="h-3 w-3 text-red-600 flex-shrink-0" />
+            <span className="font-semibold text-red-900 truncate flex-1">{dispute.dispute_reason}</span>
+            <Badge className="bg-red-100 text-red-800 text-xs py-0 px-1.5">{dispute.status}</Badge>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto bg-gray-50 p-3">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent mx-auto mb-2"></div>
+                <p className="text-xs text-gray-600">Loading...</p>
+              </div>
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center max-w-md">
+                <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                <h3 className="font-semibold text-gray-900 mb-1 text-sm">No messages yet</h3>
+                <p className="text-xs text-gray-600">Respond to buyer complaint</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2 max-w-4xl mx-auto">
+              {messages.map((msg, index) => {
+                const isYou = msg.sender_type === 'seller';
+                const isAdmin = msg.sender_type === 'admin';
+                const showDateSeparator = index === 0 || 
+                  new Date(messages[index - 1].created_at).toDateString() !== new Date(msg.created_at).toDateString();
+
+                return (
+                  <div key={msg.id}>
+                    {showDateSeparator && (
+                      <div className="flex items-center justify-center my-2">
+                        <div className="bg-gray-200 text-gray-600 text-xs px-2 py-0.5 rounded-full">
+                          {new Date(msg.created_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className={`flex ${isYou ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`flex items-end gap-1.5 max-w-[75%] ${isYou ? 'flex-row-reverse' : 'flex-row'}`}>
+                        <div className={`h-6 w-6 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 ${
+                          isAdmin ? 'bg-purple-500' : 'bg-green-500'
+                        }`}>
+                          {isAdmin ? 'A' : 'Y'}
+                        </div>
+
+                        <div>
+                          <div className={`rounded-xl px-3 py-1.5 ${
+                            isAdmin ? 'bg-purple-100 border border-purple-200' :
+                            'bg-green-500 text-white'
+                          }`}>
+                            {!isYou && (
+                              <p className={`text-xs font-semibold mb-0.5 ${isAdmin ? 'text-purple-900' : 'text-gray-900'}`}>
+                                Admin
+                              </p>
+                            )}
+                            <p className={`text-sm whitespace-pre-wrap break-words ${
+                              isYou ? 'text-white' : 'text-gray-900'
+                            }`}>
+                              {msg.message}
+                            </p>
+                            
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <div className="mt-1.5 space-y-1.5">
+                                {msg.attachments.map((url, idx) => {
+                                  const isPDF = url.endsWith('.pdf');
+                                  return (
+                                    <div key={idx}>
+                                      {isPDF ? (
+                                        <a 
+                                          href={url} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer"
+                                          className={`flex items-center gap-1.5 p-1.5 rounded text-xs ${
+                                            isYou ? 'bg-green-600' : 'bg-gray-100'
+                                          }`}
+                                        >
+                                          <FileText className={`h-3 w-3 ${isYou ? 'text-white' : 'text-gray-600'}`} />
+                                          <span className={`${isYou ? 'text-white' : 'text-gray-600'} truncate`}>
+                                            {getFileName(url)}
+                                          </span>
+                                        </a>
+                                      ) : (
+                                        <img 
+                                          src={url} 
+                                          alt="Attachment" 
+                                          className="max-w-full rounded cursor-pointer hover:opacity-90 max-h-48 object-cover"
+                                          onClick={() => window.open(url, '_blank')}
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          <p className={`text-xs text-gray-500 mt-0.5 px-1 ${isYou ? 'text-right' : 'text-left'}`}>
+                            {formatDate(msg.created_at)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {dispute.status === 'resolved' && dispute.resolution && (
+          <div className="bg-green-50 border-t border-green-200 p-2 flex-shrink-0">
+            <div className="flex items-start gap-2">
+              <div className="h-5 w-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-green-900 text-xs mb-0.5">✓ Resolved</p>
+                <p className="text-xs text-green-800">{dispute.resolution}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {dispute.status === 'open' ? (
+          <div className="border-t bg-white p-2 flex-shrink-0">
+            {selectedFiles.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {selectedFiles.map((file, index) => (
+                  <div key={index} className="bg-blue-50 border border-blue-200 rounded px-2 py-1 flex items-center gap-1.5">
+                    {file.type.startsWith('image/') ? <ImageIcon className="h-3 w-3 text-blue-600" /> : <FileText className="h-3 w-3 text-blue-600" />}
+                    <span className="text-xs text-blue-900 max-w-[100px] truncate">{file.name}</span>
+                    <button onClick={() => removeFile(index)} className="text-blue-600 hover:text-blue-800">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-end gap-2">
+              <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple onChange={handleFileSelect} className="hidden" />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isSending || selectedFiles.length >= 5}
+                className="h-8 w-8 p-0"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+              <textarea
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Type message..."
+                className="flex-1 p-2 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 text-sm"
+                rows={1}
+                disabled={isSending}
+              />
+              <Button
+                onClick={handleSendMessage}
+                disabled={(!newMessage.trim() && selectedFiles.length === 0) || isSending}
+                size="sm"
+                className="bg-blue-500 hover:bg-blue-600 h-8 w-8 p-0"
+              >
+                {isSending ? (
+                  uploadingFiles ? <Loader2 className="h-4 w-4 animate-spin" /> : <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">💡 Max 5 files</p>
+          </div>
+        ) : (
+          <div className="border-t bg-gray-100 p-3 flex-shrink-0 text-center">
+            <p className="text-xs font-medium text-gray-600">
+              Dispute {dispute.status}
+            </p>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}

@@ -5,6 +5,15 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
+// --- NEW HELPER FUNCTION ---
+// Replaces special characters and spaces with underscores to prevent "Invalid Key" errors
+function sanitizeFileName(fileName: string): string {
+  return fileName
+    .replace(/[^a-zA-Z0-9.-]/g, '_') // Replace non-alphanumeric chars with underscore
+    .replace(/_+/g, '_'); // Replace multiple underscores with a single one
+}
+// ---------------------------
+
 const productSchema = z.object({
   name: z.string().min(5, 'Product name must be at least 5 characters'),
   description: z.string().min(20, 'Description must be at least 20 characters'),
@@ -66,9 +75,15 @@ export async function addProduct(prevState: { error: string | null }, formData: 
 
   for (const image of images) {
     if (image.size > 0) {
-      const filePath = `products/${seller.id}/${Date.now()}-${image.name}`;
+      const cleanName = sanitizeFileName(image.name);
+      const filePath = `products/${seller.id}/${Date.now()}-${cleanName}`;
+      
       const { error: uploadError } = await supabase.storage.from('product-images').upload(filePath, image);
-      if (uploadError) return { error: 'Failed to upload one or more images.' };
+      
+      if (uploadError) {
+        console.error('❌ ADD PRODUCT UPLOAD ERROR:', uploadError);
+        return { error: `Failed to upload image: ${uploadError.message}` };
+      }
 
       const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(filePath);
       imageUrls.push(urlData.publicUrl);
@@ -116,6 +131,9 @@ export async function updateProduct(productId: string, prevState: { error: strin
   if (fetchError || !product) return { error: 'Product not found.' };
   if (product.seller_id !== seller.id) return { error: 'You do not have permission to update this product.' };
 
+  // Check if this is a resubmission
+  const isResubmit = formData.get('resubmit') === 'true';
+
   const universityIdValue = formData.get('university_id');
   const validatedFields = productSchema.safeParse({
     name: formData.get('name'), description: formData.get('description'), price: formData.get('price'),
@@ -153,9 +171,15 @@ export async function updateProduct(productId: string, prevState: { error: strin
 
     for (const image of newImages) {
       if (image.size > 0) {
-        const filePath = `products/${seller.id}/${Date.now()}-${image.name}`;
+        const cleanName = sanitizeFileName(image.name);
+        const filePath = `products/${seller.id}/${Date.now()}-${cleanName}`;
+        
         const { error: uploadError } = await supabase.storage.from('product-images').upload(filePath, image);
-        if (uploadError) return { error: 'Failed to upload one or more images.' };
+        
+        if (uploadError) {
+          console.error('❌ UPDATE PRODUCT UPLOAD ERROR:', uploadError);
+          return { error: `Failed to upload new image: ${uploadError.message}` };
+        }
 
         const { data: urlData } = supabase.storage.from('product-images').getPublicUrl(filePath);
         imageUrls.push(urlData.publicUrl);
@@ -163,20 +187,48 @@ export async function updateProduct(productId: string, prevState: { error: strin
     }
   }
 
-  // ✅ FIX: Only set available if approved and not suspended
-  const is_available = product.approval_status === 'approved' && !product.admin_suspended && !product.is_banned && stock > 0;
-
   const sizesArray = sizes ? JSON.parse(sizes) : [];
   const colorsArray = colors ? JSON.parse(colors) : [];
+
+  // Determine approval status and availability
+  let approvalStatus = product.approval_status;
+  let isAvailable = product.approval_status === 'approved' && !product.admin_suspended && !product.is_banned && stock > 0;
+
+  // If resubmitting a rejected product, reset to pending
+  if (isResubmit && (product.approval_status === 'rejected' || product.approval_status === 'disapproved')) {
+    approvalStatus = 'pending';
+    isAvailable = false;
+  }
   
-  const { error: updateError } = await supabase.from('products').update({
+  const updateData: any = {
     name, description, price, stock_quantity: stock, category_id: category, university_id: university_id || null,
-    image_urls: imageUrls, is_available, condition: condition || 'new', sku: sku || null,
+    image_urls: imageUrls, is_available: isAvailable, condition: condition || 'new', sku: sku || null,
     original_price: original_price || null, discount_percentage: discount_percentage || 0,
     brand: brand || null, colors: colorsArray, sizes: sizesArray, updated_at: new Date().toISOString(),
-  }).eq('id', productId);
+    approval_status: approvalStatus,
+  };
+
+  const { error: updateError } = await supabase.from('products').update(updateData).eq('id', productId);
 
   if (updateError) return { error: 'Failed to update product in database.' };
+
+  // If resubmitting, update product_approvals table
+  if (isResubmit && (product.approval_status === 'rejected' || product.approval_status === 'disapproved')) {
+    await supabase.from('product_approvals').update({
+      status: 'pending',
+      rejection_reason: null,
+      updated_at: new Date().toISOString(),
+    }).eq('product_id', productId);
+
+    // Send notification to seller
+    await supabase.from('notifications').insert({
+      user_id: seller.id,
+      type: 'product_resubmitted',
+      title: 'Product Resubmitted',
+      message: `Your product "${name}" has been resubmitted for approval.`,
+      is_read: false,
+    });
+  }
 
   revalidatePath('/dashboard/products');
   redirect('/dashboard/products');

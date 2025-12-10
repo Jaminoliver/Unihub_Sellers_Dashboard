@@ -16,6 +16,9 @@ import {
   ChevronLeft,
   ChevronRight,
   HelpCircle,
+  AlertCircle,
+  Shield,
+  MessageSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
@@ -52,10 +55,25 @@ const navigation = [
     icon: Megaphone,
   },
   {
-  name: 'Finance',
-  href: '/dashboard/finance',
-  icon: Wallet,
-},
+    name: 'Finance',
+    href: '/dashboard/finance',
+    icon: Wallet,
+  },
+  {
+    name: 'Escrow',
+    href: '/dashboard/escrow',
+    icon: Shield,
+  },
+  {
+    name: 'Order Disputes',
+    href: '/dashboard/order-disputes',
+    icon: AlertCircle,
+  },
+  {
+    name: 'My Disputes',
+    href: '/dashboard/seller-disputes',
+    icon: MessageSquare,
+  },
   {
     name: 'Account / Verification',
     href: '/dashboard/account/verification',

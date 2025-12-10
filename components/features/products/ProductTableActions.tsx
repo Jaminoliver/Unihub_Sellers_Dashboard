@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { MoreHorizontal, Edit, Trash2, Pause, Play, MessageCircle } from 'lucide-react';
+import { MoreHorizontal, Edit, Trash2, Pause, Play, MessageCircle, RefreshCw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
@@ -25,8 +25,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-import { deleteProduct } from '@/app/dashboard/products/new/actions';
-import { unsuspendProduct } from '@/app/dashboard/products/new/actions';
+import { deleteProduct, unsuspendProduct } from '@/app/dashboard/products/new/actions';
 import { SuspendProductDialog } from './SuspendProductDialog';
 import { AppealDialog } from './AppealDialog';
 
@@ -36,7 +35,8 @@ interface ProductTableActionsProps {
   isSuspended: boolean;
   isAdminSuspended: boolean;
   isBanned: boolean;
-  isDisapprovedOrAdminSuspended: boolean;
+  isDisapproved: boolean;
+  rejectionReason?: string | null;
   banReason?: string | null;
   approvalStatus: string;
 }
@@ -47,12 +47,14 @@ export function ProductTableActions({
   isSuspended,
   isAdminSuspended,
   isBanned,
-  isDisapprovedOrAdminSuspended,
+  isDisapproved,
+  rejectionReason,
   banReason,
   approvalStatus,
 }: ProductTableActionsProps) {
   const router = useRouter();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showResubmitDialog, setShowResubmitDialog] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUnsuspending, setIsUnsuspending] = useState(false);
 
@@ -87,6 +89,12 @@ export function ProductTableActions({
     }
 
     setIsUnsuspending(false);
+  };
+
+  const handleResubmit = () => {
+    // Navigate to edit page with resubmit flag
+    router.push(`/dashboard/products/${productId}/edit?resubmit=true`);
+    toast.info('Please make the required changes and resubmit');
   };
 
   // BANNED PRODUCTS: Only show delete button
@@ -172,20 +180,54 @@ export function ProductTableActions({
     );
   }
 
-  // DISAPPROVED PRODUCTS: Only show delete button
-  if (isDisapprovedOrAdminSuspended && !isAdminSuspended) {
+  // DISAPPROVED PRODUCTS: Show resubmit and delete buttons
+  if (isDisapproved) {
     return (
-      <>
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+          onClick={() => setShowResubmitDialog(true)}
+        >
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Fix & Resubmit
+        </Button>
+        
         <Button
           variant="ghost"
           size="sm"
           className="text-red-600 hover:text-red-700 hover:bg-red-50"
           onClick={() => setShowDeleteDialog(true)}
         >
-          <Trash2 className="h-4 w-4 mr-2" />
-          Delete
+          <Trash2 className="h-4 w-4" />
         </Button>
 
+        {/* Resubmit Dialog */}
+        <AlertDialog open={showResubmitDialog} onOpenChange={setShowResubmitDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Fix and Resubmit Product</AlertDialogTitle>
+              <AlertDialogDescription>
+                You'll be taken to the edit page where you can fix the issues and resubmit for approval.
+                {rejectionReason && (
+                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <span className="text-sm font-semibold text-yellow-900 block">Rejection Reason:</span>
+                    <span className="text-sm text-yellow-800 mt-1 block">{rejectionReason}</span>
+                  </div>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleResubmit} className="bg-blue-600 hover:bg-blue-700">
+                Continue to Edit
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Delete Dialog */}
         <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -206,7 +248,7 @@ export function ProductTableActions({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </>
+      </div>
     );
   }
 
